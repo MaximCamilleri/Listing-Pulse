@@ -62,7 +62,7 @@ class ScraperService():
                     continue 
 
                 if settings.scraper_search_term.upper() in title.upper():
-                    print(f"New KWR Listing: {title}, Time: {notice.get('listed_at')}")
+                    print(f"New KRW Listing: {title}, Time: {notice.get('listed_at')}")
                 
                 self.seen_notices.add(notice_id)
 
