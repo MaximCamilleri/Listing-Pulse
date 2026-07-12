@@ -3,6 +3,10 @@ from typing import Any
 from curl_cffi import requests
 
 from src.config.settings import settings
+from src.support.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 HEADERS = {
@@ -27,6 +31,12 @@ class UpbitClient:
             "_t": timestamp_ms,
         }
 
+        logger.debug(
+            "Requesting Upbit trade notices url=%s search_term=%s timeout_seconds=%.2f",
+            settings.scraper_url,
+            search_term,
+            settings.scraper_timeout,
+        )
         response = requests.get(
             settings.scraper_url,
             headers=HEADERS,
@@ -36,9 +46,16 @@ class UpbitClient:
         )
 
         if response.status_code != 200:
+            logger.error(
+                "Upbit notices request failed status_code=%s response_text=%s",
+                response.status_code,
+                response.text[:500],
+            )
             raise RuntimeError(
                 f"Upbit notices request failed with status {response.status_code}"
             )
 
         data = response.json()
-        return data.get("data", {}).get("notices", [])
+        notices = data.get("data", {}).get("notices", [])
+        logger.debug("Upbit notices request succeeded result_count=%d", len(notices))
+        return notices

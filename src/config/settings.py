@@ -4,6 +4,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENVIRONMENT = Literal["DEMO", "PROD"]
+LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,10 @@ class Settings(BaseSettings):
     trade_environment: ENVIRONMENT = Field(
         default="DEMO",
         description="Defines where trades will be placed. Value can be set to DEMO or PROD",
+    )
+    log_level: LOG_LEVEL = Field(
+        default="INFO",
+        description="Minimum log level emitted by the application",
     )
 
     # Scraper
