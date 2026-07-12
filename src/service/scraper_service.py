@@ -23,6 +23,13 @@ class ScraperService:
             settings.scraper_cooldown,
             settings.scraper_cooldown_offset,
         )
+        while not self.initialize_seen_notices():
+            sleep_time = random.uniform(
+                settings.scraper_cooldown - settings.scraper_cooldown_offset,
+                settings.scraper_cooldown + settings.scraper_cooldown_offset,
+            )
+            time.sleep(sleep_time)
+
         while True:
             self.check_for_notice()
 
@@ -31,6 +38,36 @@ class ScraperService:
                 settings.scraper_cooldown + settings.scraper_cooldown_offset,
             )
             time.sleep(sleep_time)
+
+    def initialize_seen_notices(self) -> bool:
+        try:
+            checked_at = time.time()
+            notices = self.upbit_client.fetch_trade_notices(
+                search_term=settings.scraper_search_term,
+                timestamp_ms=int(checked_at * 1000),
+            )
+
+            for notice in notices:
+                notice_id = notice.get("id")
+                if notice_id is None:
+                    logger.warning(
+                        "Skipping Upbit notice without id during baseline title=%s",
+                        notice.get("title", ""),
+                    )
+                    continue
+
+                self.seen_notices.add(notice_id)
+
+            logger.info(
+                "Initialized Upbit notice baseline result_count=%d seen_notice_count=%d",
+                len(notices),
+                len(self.seen_notices),
+            )
+            return True
+
+        except Exception:
+            logger.exception("Failed to initialize Upbit notice baseline")
+            return False
 
     def check_for_notice(self) -> None:
         try:
@@ -48,6 +85,13 @@ class ScraperService:
             for notice in notices:
                 notice_id = notice.get("id")
                 title = notice.get("title", "")
+
+                if notice_id is None:
+                    logger.warning(
+                        "Skipping Upbit notice without id title=%s",
+                        title,
+                    )
+                    continue
 
                 if notice_id in self.seen_notices:
                     logger.debug(
