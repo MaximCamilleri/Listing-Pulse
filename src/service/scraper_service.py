@@ -30,10 +30,6 @@ class ScraperService:
                 settings.scraper_cooldown - settings.scraper_cooldown_offset,
                 settings.scraper_cooldown + settings.scraper_cooldown_offset,
             )
-            logger.debug(
-                "Sleeping before next scraper check sleep_seconds=%.2f",
-                sleep_time,
-            )
             time.sleep(sleep_time)
 
     def check_for_notice(self) -> None:
@@ -60,19 +56,11 @@ class ScraperService:
                     )
                     continue
 
-                if settings.scraper_search_term.upper() in title.upper():
-                    logger.warning(
-                        "Detected matching Upbit notice notice_id=%s listed_at=%s title=%s",
-                        notice_id,
-                        notice.get("listed_at"),
-                        title,
-                    )
-                else:
-                    logger.debug(
-                        "Recorded non-matching Upbit notice notice_id=%s title=%s",
-                        notice_id,
-                        title,
-                    )
+                logger.info(
+                    "Recorded new Upbit notice notice_id=%s title=%s",
+                    notice_id,
+                    title,
+                )
 
                 self.seen_notices.add(notice_id)
 

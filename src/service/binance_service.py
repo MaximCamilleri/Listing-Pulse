@@ -31,6 +31,7 @@ class BinanceService:
             Percentage retracement, e.g. Decimal("1.0") means 1%.
 
         """
+        # Validations 
         symbol = symbol.upper().strip()
         if not symbol:
             logger.error("Rejected market order with empty symbol")
@@ -73,6 +74,8 @@ class BinanceService:
             quantity,
             callback_rate,
         )
+
+        # Open trade
         entry = self.binance_client.place_market_order(
             symbol=symbol,
             side=direction,
@@ -99,6 +102,8 @@ class BinanceService:
             direction,
             executed_quantity,
         )
+
+        # Add trailing stop
         trailing_stop = self.binance_client.place_trailing_stop_order(
             symbol=symbol,
             side="SELL" if direction == "BUY" else "BUY",
@@ -114,4 +119,5 @@ class BinanceService:
             quantity,
             callback_rate,
         )
+
         return entry, trailing_stop
