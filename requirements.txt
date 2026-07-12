@@ -1,0 +1,4 @@
+binance-sdk-derivatives-trading-usds-futures
+curl-cffi
+pydantic
+pydantic-settings
