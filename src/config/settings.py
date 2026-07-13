@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field
@@ -5,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENVIRONMENT = Literal["DEMO", "PROD"]
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+ORDER_DIRECTION = Literal["BUY", "SELL"]
 
 
 class Settings(BaseSettings):
@@ -17,6 +19,10 @@ class Settings(BaseSettings):
     )
 
     # General
+    trading_enabled: bool = Field(
+        default=False,
+        description="When true, new scraper notices trigger Binance order placement",
+    )
     trade_environment: ENVIRONMENT = Field(
         default="DEMO",
         description="Defines where trades will be placed. Value can be set to DEMO or PROD",
@@ -24,6 +30,22 @@ class Settings(BaseSettings):
     log_level: LOG_LEVEL = Field(
         default="INFO",
         description="Minimum log level emitted by the application",
+    )
+    
+    # Trade
+    order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
+    order_quantity: Decimal = Field(default=Decimal("0"), description="Order quantity")
+    order_callback_rate: Decimal = Field(default=Decimal(5), description="Trailing stop distance")
+    binance_symbol_quote_asset: str = Field(
+        default="USDT",
+        description="Quote asset appended to parsed notice symbols for Binance futures",
+    )
+    notice_symbol_pattern: str = Field(
+        default="",
+        description=(
+            "Optional regex used to parse the base asset from a notice title. "
+            "Use a named 'symbol' group or the first capture group."
+        ),
     )
 
     # Scraper
