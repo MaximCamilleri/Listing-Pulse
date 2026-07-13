@@ -1,5 +1,7 @@
 import random
+import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from src.config.settings import settings
@@ -9,10 +11,19 @@ from src.support.logger import get_logger
 
 logger = get_logger(__name__)
 
+NoticeHandler = Callable[[dict[str, Any]], None]
+
 
 class ScraperService:
-    def __init__(self, upbit_client: UpbitClient | None = None) -> None:
+    def __init__(
+        self,
+        upbit_client: UpbitClient | None = None,
+        on_new_notice: NoticeHandler | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         self.upbit_client = upbit_client or UpbitClient()
+        self.on_new_notice = on_new_notice
+        self.stop_event = stop_event or threading.Event()
         self.seen_notices: set[Any] = set()
         logger.debug("ScraperService initialized")
 
@@ -23,21 +34,23 @@ class ScraperService:
             settings.scraper_cooldown,
             settings.scraper_cooldown_offset,
         )
-        while not self.initialize_seen_notices():
+        while not self.stop_event.is_set() and not self.initialize_seen_notices():
             sleep_time = random.uniform(
                 settings.scraper_cooldown - settings.scraper_cooldown_offset,
                 settings.scraper_cooldown + settings.scraper_cooldown_offset,
             )
-            time.sleep(sleep_time)
+            self._sleep(sleep_time)
 
-        while True:
+        while not self.stop_event.is_set():
             self.check_for_notice()
 
             sleep_time = random.uniform(
                 settings.scraper_cooldown - settings.scraper_cooldown_offset,
                 settings.scraper_cooldown + settings.scraper_cooldown_offset,
             )
-            time.sleep(sleep_time)
+            self._sleep(sleep_time)
+
+        logger.info("Scraper loop stopped")
 
     def initialize_seen_notices(self) -> bool:
         try:
@@ -107,6 +120,11 @@ class ScraperService:
                 )
 
                 self.seen_notices.add(notice_id)
+                if self.on_new_notice is not None:
+                    self.on_new_notice(notice)
 
         except Exception:
             logger.exception("Failed to check Upbit trade notices")
+
+    def _sleep(self, sleep_time: float) -> None:
+        self.stop_event.wait(max(0.0, sleep_time))
