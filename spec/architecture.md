@@ -32,7 +32,7 @@ The application is deployed as a long-running worker process. The runtime entry 
 
 `main.py` is responsible for composing runtime workflows from `src/interface/`. Scraper startup should inject the new-notice handler into `ScraperService`; `ScraperService` should only detect and publish new notices through that handler, not decide whether Binance or another downstream action should run.
 
-Container deployments must run the process with `python main.py`. Application logs must be written to stdout/stderr so the hosting platform can forward them to CloudWatch Logs or an equivalent log sink. Deployment secrets must be injected as environment variables from AWS Secrets Manager, SSM Parameter Store, or another secret manager; they must not be included in the container image.
+Container deployments must run the process with `python main.py`. Application logs must be written to stdout/stderr so the hosting platform can forward them to CloudWatch Logs or an equivalent log sink. The shared logging setup must also write to `logs/application.log`, rotate that file daily at UTC midnight, and retain seven daily files by default. The log directory and retention period are environment-driven settings. Deployment secrets must be injected as environment variables from AWS Secrets Manager, SSM Parameter Store, or another secret manager; they must not be included in the container image.
 
 Trading is guarded by `trading_enabled`. Keep it false for local development unless explicitly testing the Binance order workflow. Production deployments must set `trade_environment`, `trading_enabled`, order settings, scraper settings, and Binance credentials through the deployment environment.
 

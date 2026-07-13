@@ -20,7 +20,7 @@ The scraper can poll the Upbit announcements API, establish a baseline of alread
 
 The Binance service can validate and place a market entry order, confirm that the entry filled, and then place a trailing stop order in the opposite direction.
 
-The runtime has been prepared for hosted operation. It logs to stdout, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
+The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 
 The scraper-to-trade workflow is modular. `ScraperService` detects new notices and publishes them through an injected handler. The default interface-layer handler parses symbols from the notice title and calls `BinanceService` only when trading is enabled.
 

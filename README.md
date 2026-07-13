@@ -22,6 +22,23 @@ Upbit, records new notice IDs in memory, and passes new notices to an injected
 interface-layer handler. The default handler only places Binance orders when
 `TRADING_ENABLED=true`.
 
+To run only the scraper and record new notices without taking action on them:
+
+```bash
+python scripts/run_scraper.py
+```
+
+To place one explicitly requested Binance trade using the configured direction,
+quantity, callback rate, and environment:
+
+```bash
+python scripts/place_trade.py BTCUSDT
+```
+
+The trade command refuses to initialize Binance unless `TRADING_ENABLED=true`.
+Both scripts log to stdout and `logs/application.log`; file logs rotate daily at
+UTC midnight and are retained for seven days by default.
+
 ## AWS Hosting
 
 The preferred managed hosting option is a single-container ECS Fargate service:
