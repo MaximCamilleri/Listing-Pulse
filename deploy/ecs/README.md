@@ -31,7 +31,9 @@ Create the following AWS networking resources before deploying:
 1. A VPC with at least two private subnets.
 2. A NAT Gateway in a public subnet, with an Elastic IP.
 3. A default route from each selected private subnet to the NAT Gateway.
-4. A security group with no inbound rules and outbound HTTPS/internet access.
+4. A security group with no inbound rules and outbound access. Allow all
+   outbound traffic initially so DNS and the external HTTPS APIs work; tighten
+   it only after validating every required destination.
 
 The NAT Gateway Elastic IP is the stable outbound address to allowlist in
 Binance. A single NAT Gateway costs less but is not Availability Zone redundant.
@@ -81,6 +83,13 @@ $ImageTag = git rev-parse --short HEAD
 
 The script runs the unit tests, creates the ECR repository if necessary, builds
 the Linux x86-64 image, and pushes it to ECR.
+
+It expects the repository virtual environment and dependencies to exist:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 ## 4. Register a task-definition revision
 

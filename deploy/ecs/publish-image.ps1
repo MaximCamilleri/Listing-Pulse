@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$PythonExecutable = Join-Path $RepositoryRoot ".venv\Scripts\python.exe"
 $AccountId = aws sts get-caller-identity `
     --query "Account" `
     --output text `
@@ -43,7 +44,11 @@ if ($LASTEXITCODE -ne 0 -or $null -eq $repository.repositories) {
 }
 
 if (-not $SkipTests) {
-    & (Join-Path $RepositoryRoot ".venv\Scripts\python.exe") `
+    if (-not (Test-Path -LiteralPath $PythonExecutable)) {
+        throw "Python virtual environment not found. Create .venv and install requirements before publishing."
+    }
+
+    & $PythonExecutable `
         -m unittest discover -s tests -p "test_*.py" -v
     if ($LASTEXITCODE -ne 0) {
         throw "Repository tests failed. The image was not published."

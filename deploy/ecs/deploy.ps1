@@ -98,7 +98,8 @@ try {
         $operation = "create-service"
     }
 
-    $request | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $RequestPath -Encoding utf8
+    $requestJson = $request | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($RequestPath, $requestJson)
     aws ecs $operation `
         --cli-input-json "file://$RequestPath" `
         --region $Region `
