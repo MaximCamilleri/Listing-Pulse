@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -30,6 +31,15 @@ class Settings(BaseSettings):
     log_level: LOG_LEVEL = Field(
         default="INFO",
         description="Minimum log level emitted by the application",
+    )
+    log_directory: Path = Field(
+        default=Path("logs"),
+        description="Directory where rotating application log files are stored",
+    )
+    log_retention_days: int = Field(
+        default=7,
+        ge=1,
+        description="Number of daily application log files to retain",
     )
     
     # Trade
