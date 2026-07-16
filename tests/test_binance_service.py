@@ -2,7 +2,7 @@ import logging
 import unittest
 from decimal import Decimal
 
-from src.service.binance_service import BinanceService
+from src.control.binance_service import BinanceService
 
 
 class FakeBinanceClient:

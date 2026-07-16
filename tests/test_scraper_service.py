@@ -2,7 +2,7 @@ import logging
 import threading
 import unittest
 
-from src.service.scraper_service import ScraperService
+from src.control.scraper_service import ScraperService
 
 
 class FakeUpbitClient:
