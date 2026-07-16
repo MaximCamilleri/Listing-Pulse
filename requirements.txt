@@ -1,4 +1,4 @@
-binance-sdk-derivatives-trading-usds-futures
-curl-cffi
-pydantic
-pydantic-settings
+binance-sdk-derivatives-trading-usds-futures==12.0.0
+curl-cffi==0.15.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
