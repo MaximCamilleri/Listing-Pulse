@@ -82,7 +82,7 @@ class BinanceService:
             quantity=quantity,
         )
 
-        executed_quantity = Decimal(str(entry.get("executedQty", "0")))
+        executed_quantity = Decimal(str(entry.executed_qty))
 
         if executed_quantity <= 0:
             logger.error(
@@ -90,8 +90,8 @@ class BinanceService:
                 "symbol=%s direction=%s status=%s order_id=%s executed_quantity=%s",
                 symbol,
                 direction,
-                entry.get("status"),
-                entry.get("orderId"),
+                entry.status,
+                entry.order_id,
                 executed_quantity,
             )
             raise RuntimeError(f"Entry was not filled: {entry}")

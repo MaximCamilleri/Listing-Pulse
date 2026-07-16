@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
     order_quantity: Decimal = Field(default=Decimal("0"), description="Order quantity")
-    order_callback_rate: Decimal = Field(default=Decimal(5), description="Trailing stop distance")
+    order_callback_rate: Decimal = Field(default=Decimal(5), description=f"Trailing stop distance. 5 means 5% off price")
     binance_symbol_quote_asset: str = Field(
         default="USDT",
         description="Quote asset appended to parsed notice symbols for Binance futures",
@@ -60,7 +60,10 @@ class Settings(BaseSettings):
 
     # Scraper
     scraper_url: str = Field(default="", description="Upbit announcements API URL")
-    scraper_search_term: str = Field(default="", description="Notice title search term")
+    scraper_search_term: str = Field(
+        default="",
+        description="Optional notice title filter; blank fetches notices without a search filter",
+    )
     scraper_cooldown: float = Field(
         default=10.0,
         description="Time between checks in seconds",

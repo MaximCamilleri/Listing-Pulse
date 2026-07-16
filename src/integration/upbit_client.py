@@ -25,16 +25,18 @@ class UpbitClient:
         params = {
             "os": "web",
             "category": "trade",
-            "search": search_term,
             "page": 1,
             "per_page": 20,
             "_t": timestamp_ms,
         }
+        normalized_search_term = search_term.strip()
+        if normalized_search_term:
+            params["search"] = normalized_search_term
 
         logger.debug(
             "Requesting Upbit trade notices url=%s search_term=%s timeout_seconds=%.2f",
             settings.scraper_url,
-            search_term,
+            normalized_search_term or "<all>",
             settings.scraper_timeout,
         )
         response = requests.get(

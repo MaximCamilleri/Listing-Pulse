@@ -65,8 +65,8 @@ class BinanceClient:
             "Binance market order accepted symbol=%s side=%s status=%s order_id=%s",
             symbol,
             side,
-            response.get("status"),
-            response.get("orderId"),
+            response.status,
+            response.order_id,
         )
         return response
 
@@ -109,9 +109,9 @@ class BinanceClient:
             raise
 
         logger.info(
-            "Binance trailing stop accepted symbol=%s side=%s order_id=%s",
+            "Binance trailing stop accepted symbol=%s side=%s algo_id=%s",
             symbol,
             side,
-            response.get("orderId"),
+            response.algo_id,
         )
         return response

@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from src.config.settings import settings
-from src.service.binance_service import BinanceService
+from src.control.binance_service import BinanceService
 from src.support.logger import get_logger
 
 
