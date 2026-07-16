@@ -154,3 +154,6 @@ cython_debug/
 # Codex 
 AGENTS.md
 .agents
+
+# logs 
+logs/*
