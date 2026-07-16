@@ -2,6 +2,11 @@ import logging
 import unittest
 from decimal import Decimal
 
+from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
+    NewAlgoOrderResponse,
+    NewOrderResponse,
+)
+
 from src.integration.binance_client import BinanceClient
 
 
@@ -20,11 +25,17 @@ class FakeRestApi:
 
     def new_order(self, **kwargs):
         self.new_order_calls.append(kwargs)
-        return FakeResponse({"orderId": 200, "status": "FILLED"})
+        return FakeResponse(
+            NewOrderResponse(
+                orderId=200,
+                status="FILLED",
+                executedQty="1.25",
+            )
+        )
 
     def new_algo_order(self, **kwargs):
         self.new_algo_order_calls.append(kwargs)
-        return FakeResponse({"orderId": 201})
+        return FakeResponse(NewAlgoOrderResponse(algoId=201))
 
 
 class FakeSdkClient:
@@ -49,7 +60,8 @@ class BinanceClientTests(unittest.TestCase):
             quantity=Decimal("1.25"),
         )
 
-        self.assertEqual(response, {"orderId": 200, "status": "FILLED"})
+        self.assertEqual(response.order_id, 200)
+        self.assertEqual(response.status, "FILLED")
         self.assertEqual(
             client.client.rest_api.new_order_calls,
             [
@@ -75,7 +87,7 @@ class BinanceClientTests(unittest.TestCase):
             callback_rate=Decimal("1.5"),
         )
 
-        self.assertEqual(response, {"orderId": 201})
+        self.assertEqual(response.algo_id, 201)
         self.assertEqual(
             client.client.rest_api.new_algo_order_calls,
             [

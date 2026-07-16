@@ -1,5 +1,9 @@
 from decimal import Decimal
-from typing import Any
+
+from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
+    NewAlgoOrderResponse,
+    NewOrderResponse,
+)
 
 from src.integration.binance_client import BinanceClient
 from src.support.logger import get_logger
@@ -19,7 +23,7 @@ class BinanceService:
         quantity: Decimal,
         direction: str,
         callback_rate: Decimal,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[NewOrderResponse, NewAlgoOrderResponse]:
         """
         Open a position and place a trailing stop beneath it.
 

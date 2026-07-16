@@ -1,9 +1,12 @@
 from decimal import Decimal
-from typing import Any
 
 from binance_common.configuration import ConfigurationRestAPI
 from binance_sdk_derivatives_trading_usds_futures.derivatives_trading_usds_futures import (
     DerivativesTradingUsdsFutures,
+)
+from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
+    NewAlgoOrderResponse,
+    NewOrderResponse,
 )
 
 from src.config.settings import settings
@@ -36,7 +39,7 @@ class BinanceClient:
         symbol: str,
         side: str,
         quantity: Decimal,
-    ) -> dict[str, Any]:
+    ) -> NewOrderResponse:
         logger.info(
             "Submitting Binance market order symbol=%s side=%s quantity=%s",
             symbol,
@@ -76,7 +79,7 @@ class BinanceClient:
         side: str,
         quantity: Decimal,
         callback_rate: Decimal,
-    ) -> dict[str, Any]:
+    ) -> NewAlgoOrderResponse:
         logger.info(
             "Submitting Binance trailing stop order "
             "symbol=%s side=%s quantity=%s callback_rate=%s",

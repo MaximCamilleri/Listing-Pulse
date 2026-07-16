@@ -2,17 +2,24 @@ import logging
 import unittest
 from decimal import Decimal
 
+from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
+    NewAlgoOrderResponse,
+    NewOrderResponse,
+)
+
 from src.control.binance_service import BinanceService
 
 
 class FakeBinanceClient:
     def __init__(self, entry_response=None, trailing_stop_response=None):
-        self.entry_response = entry_response or {
-            "orderId": 100,
-            "status": "FILLED",
-            "executedQty": "1.5",
-        }
-        self.trailing_stop_response = trailing_stop_response or {"orderId": 101}
+        self.entry_response = entry_response or NewOrderResponse(
+            orderId=100,
+            status="FILLED",
+            executedQty="1.5",
+        )
+        self.trailing_stop_response = (
+            trailing_stop_response or NewAlgoOrderResponse(algoId=101)
+        )
         self.market_orders = []
         self.trailing_stop_orders = []
 
@@ -56,8 +63,8 @@ class BinanceServiceTests(unittest.TestCase):
             callback_rate=Decimal("1.0"),
         )
 
-        self.assertEqual(entry["orderId"], 100)
-        self.assertEqual(trailing_stop["orderId"], 101)
+        self.assertEqual(entry.order_id, 100)
+        self.assertEqual(trailing_stop.algo_id, 101)
         self.assertEqual(
             client.market_orders,
             [
@@ -141,11 +148,11 @@ class BinanceServiceTests(unittest.TestCase):
 
     def test_unfilled_entry_does_not_place_trailing_stop(self):
         client = FakeBinanceClient(
-            entry_response={
-                "orderId": 100,
-                "status": "EXPIRED",
-                "executedQty": "0",
-            }
+            entry_response=NewOrderResponse(
+                orderId=100,
+                status="EXPIRED",
+                executedQty="0",
+            )
         )
         service = BinanceService(binance_client=client)
 
