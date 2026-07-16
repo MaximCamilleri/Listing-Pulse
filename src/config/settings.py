@@ -76,6 +76,15 @@ class Settings(BaseSettings):
         default=5.0,
         description="Max time the scraper can take to respond",
     )
+    poll_healthcheck_file: Path = Field(
+        default=Path("logs/poll-heartbeat"),
+        description="File whose modification time records the last successful Upbit poll",
+    )
+    poll_healthcheck_grace_seconds: float = Field(
+        default=15.0,
+        ge=0,
+        description="Additional time allowed before the polling heartbeat is stale",
+    )
 
     # Binance
     binance_api_key: str = Field(default="", description="")

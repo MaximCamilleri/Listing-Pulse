@@ -36,6 +36,7 @@ class ScraperServiceTests(unittest.TestCase):
         logging.disable(logging.NOTSET)
 
     def test_initialize_seen_notices_populates_baseline(self):
+        poll_successes = []
         client = FakeUpbitClient(
             responses=[
                 [
@@ -44,13 +45,17 @@ class ScraperServiceTests(unittest.TestCase):
                 ]
             ]
         )
-        service = ScraperService(upbit_client=client)
+        service = ScraperService(
+            upbit_client=client,
+            poll_success_recorder=lambda: poll_successes.append(True),
+        )
 
         initialized = service.initialize_seen_notices()
 
         self.assertTrue(initialized)
         self.assertEqual(service.seen_notices, {1, 2})
         self.assertEqual(len(client.calls), 1)
+        self.assertEqual(poll_successes, [True])
 
     def test_check_for_notice_skips_baseline_ids(self):
         client = FakeUpbitClient(
@@ -99,14 +104,30 @@ class ScraperServiceTests(unittest.TestCase):
         self.assertEqual(service.seen_notices, set())
 
     def test_initialize_seen_notices_failure_returns_false(self):
+        poll_successes = []
         client = FakeUpbitClient(exception=RuntimeError("network unavailable"))
-        service = ScraperService(upbit_client=client)
+        service = ScraperService(
+            upbit_client=client,
+            poll_success_recorder=lambda: poll_successes.append(True),
+        )
 
         initialized = service.initialize_seen_notices()
 
         self.assertFalse(initialized)
         self.assertEqual(service.seen_notices, set())
         self.assertEqual(len(client.calls), 1)
+        self.assertEqual(poll_successes, [])
+
+    def test_check_for_notice_records_successful_poll(self):
+        poll_successes = []
+        service = ScraperService(
+            upbit_client=FakeUpbitClient(responses=[[]]),
+            poll_success_recorder=lambda: poll_successes.append(True),
+        )
+
+        service.check_for_notice()
+
+        self.assertEqual(poll_successes, [True])
 
     def test_new_notice_calls_handler(self):
         client = FakeUpbitClient(

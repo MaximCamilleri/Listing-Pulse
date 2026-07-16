@@ -20,6 +20,16 @@
       "linuxParameters": {
         "initProcessEnabled": true
       },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python -m src.support.poll_healthcheck"
+        ],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
       "environment": [
         {
           "name": "TRADING_ENABLED",
@@ -52,6 +62,10 @@
         {
           "name": "SCRAPER_TIMEOUT",
           "value": "5"
+        },
+        {
+          "name": "POLL_HEALTHCHECK_GRACE_SECONDS",
+          "value": "15"
         },
         {
           "name": "ORDER_DIRECTION",

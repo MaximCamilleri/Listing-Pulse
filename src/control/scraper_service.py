@@ -7,11 +7,13 @@ from typing import Any
 from src.config.settings import settings
 from src.integration.upbit_client import UpbitClient
 from src.support.logger import get_logger
+from src.support.poll_healthcheck import record_poll_success, reset_poll_health
 
 
 logger = get_logger(__name__)
 
 NoticeHandler = Callable[[dict[str, Any]], None]
+PollSuccessRecorder = Callable[[], None]
 
 
 class ScraperService:
@@ -20,14 +22,17 @@ class ScraperService:
         upbit_client: UpbitClient | None = None,
         on_new_notice: NoticeHandler | None = None,
         stop_event: threading.Event | None = None,
+        poll_success_recorder: PollSuccessRecorder = record_poll_success,
     ) -> None:
         self.upbit_client = upbit_client or UpbitClient()
         self.on_new_notice = on_new_notice
         self.stop_event = stop_event or threading.Event()
+        self.poll_success_recorder = poll_success_recorder
         self.seen_notices: set[Any] = set()
         logger.debug("ScraperService initialized")
 
     def start(self) -> None:
+        reset_poll_health()
         logger.info(
             "Starting scraper loop search_term=%s cooldown_seconds=%.2f offset_seconds=%.2f",
             settings.scraper_search_term,
@@ -76,6 +81,7 @@ class ScraperService:
                 len(notices),
                 len(self.seen_notices),
             )
+            self.poll_success_recorder()
             return True
 
         except Exception:
@@ -89,6 +95,7 @@ class ScraperService:
                 search_term=settings.scraper_search_term,
                 timestamp_ms=int(checked_at * 1000),
             )
+            self.poll_success_recorder()
             logger.info(
                 "Fetched Upbit trade notices result_count=%d seen_notice_count=%d",
                 len(notices),
