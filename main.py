@@ -2,7 +2,7 @@ import signal
 import threading
 
 from src.interface.notice_trading_workflow import create_notice_trade_handler
-from src.service.scraper_service import ScraperService
+from src.control.scraper_service import ScraperService
 from src.support.logger import configure_logging, get_logger
 
 
