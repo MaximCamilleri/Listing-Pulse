@@ -16,8 +16,14 @@ class FakeResponse:
 class UpbitClientTests(unittest.TestCase):
     def setUp(self):
         logging.disable(logging.CRITICAL)
+        self.scraper_url_patcher = patch(
+            "src.integration.upbit_client.settings.scraper_url",
+            "https://api-manager.upbit.com/api/v1/announcements/search",
+        )
+        self.scraper_url_patcher.start()
 
     def tearDown(self):
+        self.scraper_url_patcher.stop()
         logging.disable(logging.NOTSET)
 
     @patch("src.integration.upbit_client.requests.get")
