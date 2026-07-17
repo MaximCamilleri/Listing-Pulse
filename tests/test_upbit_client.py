@@ -21,7 +21,7 @@ class UpbitClientTests(unittest.TestCase):
         logging.disable(logging.NOTSET)
 
     @patch("src.integration.upbit_client.requests.get")
-    def test_empty_search_term_omits_search_parameter(self, get):
+    def test_empty_search_term_uses_unfiltered_announcements_endpoint(self, get):
         get.return_value = FakeResponse()
 
         notices = UpbitClient().fetch_trade_notices(
@@ -30,6 +30,10 @@ class UpbitClientTests(unittest.TestCase):
         )
 
         self.assertEqual(notices, [{"id": 1, "title": "Notice"}])
+        self.assertEqual(
+            get.call_args.args[0],
+            "https://api-manager.upbit.com/api/v1/announcements",
+        )
         self.assertNotIn("search", get.call_args.kwargs["params"])
 
     @patch("src.integration.upbit_client.requests.get")
@@ -44,6 +48,10 @@ class UpbitClientTests(unittest.TestCase):
         self.assertEqual(
             get.call_args.kwargs["params"]["search"],
             "KRW Market",
+        )
+        self.assertEqual(
+            get.call_args.args[0],
+            "https://api-manager.upbit.com/api/v1/announcements/search",
         )
 
 

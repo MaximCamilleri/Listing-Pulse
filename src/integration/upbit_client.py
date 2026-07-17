@@ -22,6 +22,7 @@ class UpbitClient:
         search_term: str,
         timestamp_ms: int,
     ) -> list[dict[str, Any]]:
+        normalized_search_term = search_term.strip()
         params = {
             "os": "web",
             "category": "trade",
@@ -29,18 +30,20 @@ class UpbitClient:
             "per_page": 20,
             "_t": timestamp_ms,
         }
-        normalized_search_term = search_term.strip()
+        request_url = settings.scraper_url
         if normalized_search_term:
             params["search"] = normalized_search_term
+        else:
+            request_url = request_url.removesuffix("/search")
 
         logger.debug(
             "Requesting Upbit trade notices url=%s search_term=%s timeout_seconds=%.2f",
-            settings.scraper_url,
+            request_url,
             normalized_search_term or "<all>",
             settings.scraper_timeout,
         )
         response = requests.get(
-            settings.scraper_url,
+            request_url,
             headers=HEADERS,
             params=params,
             impersonate="chrome",
@@ -49,10 +52,15 @@ class UpbitClient:
 
         if response.status_code != 200:
             logger.error(
-                "Upbit notices request failed status_code=%s response_text=%s",
+                "Upbit notices request failed status_code=%s, server=%s, cf-ray=%s, cf-cache-status=%s, content-type=%s, response_text=%s",
                 response.status_code,
+                response.headers.get("server"),
+                response.headers.get("cf-ray"),
+                response.headers.get("cf-cache-status"),
+                response.headers.get("content-type"),
                 response.text[:500],
             )
+
             raise RuntimeError(
                 f"Upbit notices request failed with status {response.status_code}"
             )
