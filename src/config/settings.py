@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     )
 
     # Telegram
+    telegram_session:str = Field(default="", description="Serialized Telethon session")
     telegram_api_id:int = Field(default=1, gt=0, description="Numeric application identifier issued by Telegram")
     telegram_api_hash:str = Field(default="", description="Secret application hash issued alongside telegram_api_id")
     telegram_channel:str = Field(default="", description="Telegram channel to monitor")

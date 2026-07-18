@@ -61,6 +61,10 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
             WorkflowTelegramController.instance.channel,
             settings.telegram_channel,
         )
+        self.assertEqual(
+            WorkflowTelegramController.instance.telegram_kwargs["session_string"],
+            settings.telegram_session,
+        )
         self.assertTrue(stop_event.is_set())
 
 
