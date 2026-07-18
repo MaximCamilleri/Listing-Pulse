@@ -1,33 +1,11 @@
+import asyncio
 import signal
 import threading
 
-from src.interface.notice_trading_workflow import create_notice_trade_handler
-from src.control.scraper_service import ScraperService
+from src.interface.trade_interface import start_trader
 from src.support.logger import configure_logging, get_logger
 
-
 logger = get_logger(__name__)
-
-
-def start_app(stop_event: threading.Event | None = None) -> None:
-    configure_logging()
-    logger.info("Starting Upbit scraper application")
-
-    stop_event = stop_event or threading.Event()
-    _configure_shutdown_signals(stop_event)
-
-    scraper = ScraperService(
-        on_new_notice=create_notice_trade_handler(),
-        stop_event=stop_event,
-    )
-    try:
-        scraper.start()
-    except KeyboardInterrupt:
-        stop_event.set()
-        logger.info("Upbit scraper application stopped by user")
-    except Exception:
-        logger.exception("Upbit scraper application stopped unexpectedly")
-        raise
 
 
 def _configure_shutdown_signals(stop_event: threading.Event) -> None:
@@ -38,6 +16,8 @@ def _configure_shutdown_signals(stop_event: threading.Event) -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
 
-
 if __name__ == "__main__":
-    start_app()
+    configure_logging()
+    shutdown_event = threading.Event()
+    _configure_shutdown_signals(shutdown_event)
+    asyncio.run(start_trader(stop_event=shutdown_event))

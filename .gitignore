@@ -157,3 +157,7 @@ AGENTS.md
 
 # logs 
 logs/*
+
+# Telegram 
+*.session
+*.session-journal

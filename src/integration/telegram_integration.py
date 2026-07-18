@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TypeAlias
 from uuid import uuid4
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, types, utils
 
 from src.support.logger import get_logger
 logger = get_logger(__name__)
@@ -129,11 +129,7 @@ class TelegramIntegration:
             An opaque subscription ID that can later be passed to unsubscribe().
         """
 
-        if not isinstance(channel, (str, int)):
-            raise TypeError("channel must be a username, URL, or numeric ID")
-
-        if isinstance(channel, str) and not channel.strip():
-            raise ValueError("channel cannot be empty")
+        channel = _normalize_channel_reference(channel)
 
         event_builder = events.NewMessage(chats=channel)
 
@@ -331,5 +327,34 @@ class TelegramIntegration:
             has_media=message.media is not None,
             grouped_id=message.grouped_id,
         )
+
+
+def _normalize_channel_reference(channel: ChannelReference) -> ChannelReference:
+    """Convert raw channel IDs into Telethon's marked channel-ID format."""
+    if not isinstance(channel, (str, int)) or isinstance(channel, bool):
+        raise TypeError("channel must be a username, URL, or numeric ID")
+
+    if isinstance(channel, str):
+        channel = channel.strip()
+        if not channel:
+            raise ValueError("channel cannot be empty")
+
+        try:
+            channel_id = int(channel)
+        except ValueError:
+            return channel
+    else:
+        channel_id = channel
+
+    if channel_id == 0:
+        raise ValueError("numeric channel ID cannot be zero")
+
+    # Telethon marks channel IDs as -(10**12 + raw_id). Configuration often
+    # contains the raw ID with an optional leading minus, as returned by other
+    # Telegram tools, so normalize both forms here.
+    if channel_id <= -1_000_000_000_000:
+        return channel_id
+
+    return utils.get_peer_id(types.PeerChannel(abs(channel_id)))
 
 
