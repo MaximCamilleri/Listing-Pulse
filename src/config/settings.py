@@ -41,6 +41,11 @@ class Settings(BaseSettings):
         ge=1,
         description="Number of daily application log files to retain",
     )
+
+    # Telegram
+    telegram_api_id:str = Field(default="", description="")
+    telegram_api_hash:str = Field(default="", description="")
+    telegram_channel:str = Field(default="", description="")
     
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")

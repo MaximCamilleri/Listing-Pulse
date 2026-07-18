@@ -11,12 +11,10 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
 
 from src.config.settings import settings
 from src.support.logger import get_logger
-
-
 logger = get_logger(__name__)
 
 
-class BinanceClient:
+class BinanceIntegration:
     def __init__(self) -> None:
         config = {
             "api_key": settings.binance_api_key,

@@ -5,7 +5,7 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewOrderResponse,
 )
 
-from src.integration.binance_client import BinanceClient
+from integration.binance_integration import BinanceIntegration
 from src.support.logger import get_logger
 
 
@@ -13,8 +13,8 @@ logger = get_logger(__name__)
 
 
 class BinanceService:
-    def __init__(self, binance_client: BinanceClient | None = None) -> None:
-        self.binance_client = binance_client or BinanceClient()
+    def __init__(self, binance_client: BinanceIntegration | None = None) -> None:
+        self.binance_client = binance_client or BinanceIntegration()
         logger.debug("BinanceService initialized")
 
     def place_market_order(
