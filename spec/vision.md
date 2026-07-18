@@ -22,7 +22,7 @@ The Binance service can validate and place a market entry order, confirm that th
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 
-The hosted worker exposes polling health without adding a web server. Successful Upbit responses refresh a local heartbeat, and the container becomes unhealthy when the heartbeat is missing or stale relative to its configured polling schedule. This allows ECS to detect and replace a worker whose process is alive but no longer polling successfully.
+The hosted worker exposes Telegram listener health without adding a web server. While the Telegram client is connected, the responsive application event loop refreshes a local heartbeat. The container becomes unhealthy when that heartbeat is missing or stale, allowing ECS to replace a worker that remains alive but is disconnected or no longer making progress.
 
 The scraper-to-trade workflow is modular. `ScraperService` detects new notices and publishes them through an injected handler. The default interface-layer handler parses symbols from the notice title and calls `BinanceService` only when trading is enabled.
 

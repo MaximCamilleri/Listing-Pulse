@@ -10,6 +10,7 @@ from telethon import TelegramClient, events, types, utils
 from telethon.sessions import StringSession
 
 from src.support.logger import get_logger
+from src.support.healthcheck import record_health
 logger = get_logger(__name__)
 
 ChannelReference: TypeAlias = str | int
@@ -67,6 +68,7 @@ class TelegramIntegration:
         telegram_retry_delay: float = 5.0,
         supervisor_initial_delay: float = 2.0,
         supervisor_max_delay: float = 60.0,
+        healthcheck_interval_seconds: float = 15.0,
     ) -> None:
         if api_id <= 0:
             raise ValueError("api_id must be a positive integer")
@@ -86,9 +88,13 @@ class TelegramIntegration:
                 "supervisor_initial_delay"
             )
 
+        if healthcheck_interval_seconds <= 0:
+            raise ValueError("healthcheck_interval_seconds must be positive")
+
         self._phone = phone
         self._supervisor_initial_delay = supervisor_initial_delay
         self._supervisor_max_delay = supervisor_max_delay
+        self._healthcheck_interval_seconds = healthcheck_interval_seconds
 
         self._client = TelegramClient(
             session=StringSession(session_string.strip()),
@@ -231,6 +237,10 @@ class TelegramIntegration:
 
         self._running = True
         self._stop_event.clear()
+        heartbeat_task = asyncio.create_task(
+            self._run_health_heartbeat(),
+            name="telegram-health-heartbeat",
+        )
 
         reconnect_delay = self._supervisor_initial_delay
 
@@ -238,6 +248,7 @@ class TelegramIntegration:
             while not self._stop_event.is_set():
                 try:
                     await self.start()
+                    record_health()
 
                     # A successful connection resets the outer backoff.
                     reconnect_delay = self._supervisor_initial_delay
@@ -275,11 +286,31 @@ class TelegramIntegration:
 
         finally:
             self._running = False
+            heartbeat_task.cancel()
+
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
             if self._client.is_connected():
                 await self._client.disconnect()
 
             logger.info("Telegram integration stopped")
+
+    async def _run_health_heartbeat(self) -> None:
+        """Refresh health only while the client and event loop are responsive."""
+        while not self._stop_event.is_set():
+            if self._client.is_connected():
+                record_health()
+
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(),
+                    timeout=self._healthcheck_interval_seconds,
+                )
+            except TimeoutError:
+                pass
 
     async def stop(self) -> None:
         """

@@ -31,6 +31,7 @@ async def start_trader(stop_event: threading.Event | None = None):
         "telegram_retry_delay" : settings.telegram_retry_delay,
         "supervisor_initial_delay" : settings.telegram_supervisor_initial_delay,
         "supervisor_max_delay" : settings.telegram_supervisor_max_delay,
+        "healthcheck_interval_seconds" : settings.healthcheck_interval_seconds,
     }
 
     trigger_control = TelegramController(

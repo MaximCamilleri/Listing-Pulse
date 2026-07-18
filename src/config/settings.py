@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     telegram_retry_delay:float = Field(default=5.0, gt=0.0, description="Number of seconds Telethon waits between its internal connection retry attempts")
     telegram_supervisor_initial_delay:float = Field(default=2.0, gt=0.0, description="Initial number of seconds the application-level supervisor waits before reconnecting after Telethon disconnects")
     telegram_supervisor_max_delay:float = Field(default=60.0, gt=0.0, description="Maximum number of seconds allowed for the application-level exponential reconnection delay")
+    healthcheck_file: Path = Field(
+        default=Path("logs/heartbeat"),
+        description="Heartbeat refreshed while the Telegram client is connected",
+    )
+    healthcheck_interval_seconds: float = Field(
+        default=15.0,
+        gt=0.0,
+        description="Seconds between Telegram connection heartbeat updates",
+    )
+    healthcheck_max_age_seconds: float = Field(
+        default=90.0,
+        gt=0.0,
+        description="Maximum heartbeat age before the worker is unhealthy",
+    )
     
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
