@@ -8,3 +8,5 @@ __pycache__
 tests
 spec
 AGENTS.md
+logs
+*.session

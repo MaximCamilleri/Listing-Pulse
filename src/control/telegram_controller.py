@@ -1,8 +1,11 @@
 from src.integration.telegram_integration import TelegramIntegration, ChannelReference, TelegramMessage
+from collections.abc import Callable, Awaitable
 import asyncio
 
 from src.support.logger import get_logger
 logger = get_logger(__name__)
+
+MessageHandler = Callable[[TelegramMessage], Awaitable[None]]
 
 class TelegramController:
     """
@@ -23,6 +26,7 @@ class TelegramController:
         *,
         telegram_kwargs: dict,
         channel: ChannelReference,
+        message_handler: MessageHandler,
         queue_size: int = 1_000,
     ) -> None:
         if queue_size <= 0:
@@ -30,6 +34,7 @@ class TelegramController:
 
         self._telegram = TelegramIntegration(**telegram_kwargs)
         self._channel = channel
+        self._message_handler = message_handler
 
         self._message_queue: asyncio.Queue[TelegramMessage | None] = (
             asyncio.Queue(maxsize=queue_size)
@@ -135,7 +140,7 @@ class TelegramController:
                 if message is None:
                     return
 
-                await self._apply_business_logic(message)
+                await self._message_handler(message)
 
             except asyncio.CancelledError:
                 raise
@@ -161,35 +166,3 @@ class TelegramController:
 
             finally:
                 self._message_queue.task_done()
-
-    async def _apply_business_logic(
-        self,
-        message: TelegramMessage,
-    ) -> None:
-        """
-        Apply application-specific rules.
-
-        Replace this example with your actual parsing, persistence, alerting,
-        trading signal processing, or other domain behavior.
-        """
-
-        text = message.text.strip()
-
-        # Example business rule: ignore messages containing no textual content.
-        if not text:
-            logger.debug(
-                "Ignoring message without text",
-                extra={"message_id": message.message_id},
-            )
-            return
-
-        logger.info(
-            "Processing Telegram channel message",
-            extra={
-                "channel_id": message.channel_id,
-                "channel_title": message.channel_title,
-                "message_id": message.message_id,
-                "message_date": message.date.isoformat(),
-                "has_media": message.has_media,
-            },
-        )
