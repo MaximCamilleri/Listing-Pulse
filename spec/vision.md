@@ -16,11 +16,13 @@ The preferred AWS direction is a single-container ECS Fargate service. ECS provi
 
 ## Implemented Capabilities
 
-The scraper can poll the Upbit announcements API, establish a baseline of already-seen notices, and detect new notices without repeatedly acting on the same notice during a single process run.
+The scraper can poll the Upbit announcements API, optionally filter notices by a configured search term, establish a baseline of already-seen notices, and detect new notices without repeatedly acting on the same notice during a single process run. A blank search term retrieves trade notices without applying a title search filter.
 
 The Binance service can validate and place a market entry order, confirm that the entry filled, and then place a trailing stop order in the opposite direction.
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
+
+The hosted worker exposes polling health without adding a web server. Successful Upbit responses refresh a local heartbeat, and the container becomes unhealthy when the heartbeat is missing or stale relative to its configured polling schedule. This allows ECS to detect and replace a worker whose process is alive but no longer polling successfully.
 
 The scraper-to-trade workflow is modular. `ScraperService` detects new notices and publishes them through an injected handler. The default interface-layer handler parses symbols from the notice title and calls `BinanceService` only when trading is enabled.
 

@@ -41,6 +41,16 @@ class Settings(BaseSettings):
         ge=1,
         description="Number of daily application log files to retain",
     )
+
+    # Telegram
+    telegram_api_id:int = Field(default=1, gt=0, description="Numeric application identifier issued by Telegram")
+    telegram_api_hash:str = Field(default="", description="Secret application hash issued alongside telegram_api_id")
+    telegram_channel:str = Field(default="", description="Telegram channel to monitor")
+    telegram_phone:str = Field(default="", description="Phone number of the Telegram user account used by Telethon to authenticate, including the international country code")
+    telegram_connection_retries:int = Field(default=5, gt=0, description="Maximum number of connection attempts Telethon performs after a connection failure")
+    telegram_retry_delay:float = Field(default=5.0, gt=0.0, description="Number of seconds Telethon waits between its internal connection retry attempts")
+    telegram_supervisor_initial_delay:float = Field(default=2.0, gt=0.0, description="Initial number of seconds the application-level supervisor waits before reconnecting after Telethon disconnects")
+    telegram_supervisor_max_delay:float = Field(default=60.0, gt=0.0, description="Maximum number of seconds allowed for the application-level exponential reconnection delay")
     
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
@@ -56,34 +66,6 @@ class Settings(BaseSettings):
             "Optional regex used to parse the base asset from a notice title. "
             "Use a named 'symbol' group or the first capture group."
         ),
-    )
-
-    # Scraper
-    scraper_url: str = Field(default="", description="Upbit announcements API URL")
-    scraper_search_term: str = Field(
-        default="",
-        description="Optional notice title filter; blank fetches notices without a search filter",
-    )
-    scraper_cooldown: float = Field(
-        default=10.0,
-        description="Time between checks in seconds",
-    )
-    scraper_cooldown_offset: float = Field(
-        default=2.5,
-        description="Plus or minus seconds from scraper_cooldown",
-    )
-    scraper_timeout: float = Field(
-        default=5.0,
-        description="Max time the scraper can take to respond",
-    )
-    poll_healthcheck_file: Path = Field(
-        default=Path("logs/poll-heartbeat"),
-        description="File whose modification time records the last successful Upbit poll",
-    )
-    poll_healthcheck_grace_seconds: float = Field(
-        default=15.0,
-        ge=0,
-        description="Additional time allowed before the polling heartbeat is stale",
     )
 
     # Binance

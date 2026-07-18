@@ -7,7 +7,8 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewOrderResponse,
 )
 
-from src.control.binance_service import BinanceService
+from src.config.settings import settings
+from src.control.binance_controller import BinanceController
 
 
 class FakeBinanceClient:
@@ -23,7 +24,7 @@ class FakeBinanceClient:
         self.market_orders = []
         self.trailing_stop_orders = []
 
-    def place_market_order(self, symbol, side, quantity):
+    async def place_market_order(self, symbol, side, quantity):
         self.market_orders.append(
             {
                 "symbol": symbol,
@@ -33,7 +34,7 @@ class FakeBinanceClient:
         )
         return self.entry_response
 
-    def place_trailing_stop_order(self, symbol, side, quantity, callback_rate):
+    async def place_trailing_stop_order(self, symbol, side, quantity, callback_rate):
         self.trailing_stop_orders.append(
             {
                 "symbol": symbol,
@@ -45,18 +46,21 @@ class FakeBinanceClient:
         return self.trailing_stop_response
 
 
-class BinanceServiceTests(unittest.TestCase):
+class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         logging.disable(logging.CRITICAL)
+        self.original_trading_enabled = settings.trading_enabled
+        settings.trading_enabled = True
 
     def tearDown(self):
+        settings.trading_enabled = self.original_trading_enabled
         logging.disable(logging.NOTSET)
 
-    def test_buy_order_places_entry_and_sell_trailing_stop(self):
+    async def test_buy_order_places_entry_and_sell_trailing_stop(self):
         client = FakeBinanceClient()
-        service = BinanceService(binance_client=client)
+        service = BinanceController(binance_client=client)
 
-        entry, trailing_stop = service.place_market_order(
+        entry, trailing_stop = await service.place_market_order(
             symbol=" btcusdt ",
             quantity=Decimal("1.5"),
             direction=" buy ",
@@ -87,11 +91,11 @@ class BinanceServiceTests(unittest.TestCase):
             ],
         )
 
-    def test_sell_order_places_entry_and_buy_trailing_stop(self):
+    async def test_sell_order_places_entry_and_buy_trailing_stop(self):
         client = FakeBinanceClient()
-        service = BinanceService(binance_client=client)
+        service = BinanceController(binance_client=client)
 
-        service.place_market_order(
+        await service.place_market_order(
             symbol="ethusdt",
             quantity=Decimal("2"),
             direction="SELL",
@@ -101,7 +105,7 @@ class BinanceServiceTests(unittest.TestCase):
         self.assertEqual(client.market_orders[0]["side"], "SELL")
         self.assertEqual(client.trailing_stop_orders[0]["side"], "BUY")
 
-    def test_invalid_inputs_are_rejected_before_any_exchange_call(self):
+    async def test_invalid_inputs_are_rejected_before_any_exchange_call(self):
         invalid_cases = [
             {
                 "symbol": "",
@@ -137,16 +141,16 @@ class BinanceServiceTests(unittest.TestCase):
 
         for kwargs in invalid_cases:
             client = FakeBinanceClient()
-            service = BinanceService(binance_client=client)
+            service = BinanceController(binance_client=client)
 
             with self.subTest(kwargs=kwargs):
                 with self.assertRaises(ValueError):
-                    service.place_market_order(**kwargs)
+                    await service.place_market_order(**kwargs)
 
                 self.assertEqual(client.market_orders, [])
                 self.assertEqual(client.trailing_stop_orders, [])
 
-    def test_unfilled_entry_does_not_place_trailing_stop(self):
+    async def test_unfilled_entry_does_not_place_trailing_stop(self):
         client = FakeBinanceClient(
             entry_response=NewOrderResponse(
                 orderId=100,
@@ -154,10 +158,10 @@ class BinanceServiceTests(unittest.TestCase):
                 executedQty="0",
             )
         )
-        service = BinanceService(binance_client=client)
+        service = BinanceController(binance_client=client)
 
         with self.assertRaises(RuntimeError):
-            service.place_market_order(
+            await service.place_market_order(
                 symbol="BTCUSDT",
                 quantity=Decimal("1"),
                 direction="BUY",
