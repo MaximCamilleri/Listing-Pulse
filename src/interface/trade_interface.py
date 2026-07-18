@@ -23,9 +23,9 @@ async def start_trader(stop_event: threading.Event | None = None):
 
     # Listener Setup
     telegram_kwargs = {
+        "session_string" : settings.telegram_session,
         "api_id" : settings.telegram_api_id,
         "api_hash" : settings.telegram_api_hash,
-        "session_name" : "telegram_listener",
         "phone" : settings.telegram_phone,
         "telegram_connection_retries" : settings.telegram_connection_retries,
         "telegram_retry_delay" : settings.telegram_retry_delay,

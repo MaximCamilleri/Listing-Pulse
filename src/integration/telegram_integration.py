@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TypeAlias
 from uuid import uuid4
 from telethon import TelegramClient, events, types, utils
+from telethon.sessions import StringSession
 
 from src.support.logger import get_logger
 logger = get_logger(__name__)
@@ -60,7 +61,7 @@ class TelegramIntegration:
         *,
         api_id: int,
         api_hash: str,
-        session_name: str = "telegram_listener",
+        session_string: str,
         phone: str | None = None,
         telegram_connection_retries: int = 5,
         telegram_retry_delay: float = 5.0,
@@ -72,6 +73,9 @@ class TelegramIntegration:
 
         if not api_hash:
             raise ValueError("api_hash cannot be empty")
+
+        if not session_string or not session_string.strip():
+            raise ValueError("session_string cannot be empty")
 
         if supervisor_initial_delay <= 0:
             raise ValueError("supervisor_initial_delay must be positive")
@@ -87,7 +91,7 @@ class TelegramIntegration:
         self._supervisor_max_delay = supervisor_max_delay
 
         self._client = TelegramClient(
-            session=session_name,
+            session=StringSession(session_string.strip()),
             api_id=api_id,
             api_hash=api_hash,
             auto_reconnect=True,
