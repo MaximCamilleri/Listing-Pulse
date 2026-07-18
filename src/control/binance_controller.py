@@ -5,7 +5,7 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewOrderResponse,
 )
 
-from integration.binance_integration import BinanceIntegration
+from src.integration.binance_integration import BinanceIntegration
 from src.support.logger import get_logger
 
 
@@ -17,7 +17,7 @@ class BinanceService:
         self.binance_client = binance_client or BinanceIntegration()
         logger.debug("BinanceService initialized")
 
-    def place_market_order(
+    async def place_market_order(
         self,
         symbol: str,
         quantity: Decimal,
@@ -80,7 +80,7 @@ class BinanceService:
         )
 
         # Open trade
-        entry = self.binance_client.place_market_order(
+        entry = await self.binance_client.place_market_order(
             symbol=symbol,
             side=direction,
             quantity=quantity,
@@ -108,7 +108,7 @@ class BinanceService:
         )
 
         # Add trailing stop
-        trailing_stop = self.binance_client.place_trailing_stop_order(
+        trailing_stop = await self.binance_client.place_trailing_stop_order(
             symbol=symbol,
             side="SELL" if direction == "BUY" else "BUY",
             quantity=quantity,

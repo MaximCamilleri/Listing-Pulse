@@ -4,7 +4,7 @@ import asyncio
 from src.support.logger import get_logger
 logger = get_logger(__name__)
 
-class TelegramChannelController:
+class TelegramController:
     """
     Application controller for one Telegram channel.
 
@@ -21,14 +21,14 @@ class TelegramChannelController:
     def __init__(
         self,
         *,
-        telegram: TelegramIntegration,
+        telegram_kwargs: dict,
         channel: ChannelReference,
         queue_size: int = 1_000,
     ) -> None:
         if queue_size <= 0:
             raise ValueError("queue_size must be positive")
 
-        self._telegram = telegram
+        self._telegram = TelegramIntegration(**telegram_kwargs)
         self._channel = channel
 
         self._message_queue: asyncio.Queue[TelegramMessage | None] = (
