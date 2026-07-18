@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     )
 
     # Telegram
-    telegram_api_id:int = Field(gt=0, description="Numeric application identifier issued by Telegram")
+    telegram_api_id:int = Field(default=1, gt=0, description="Numeric application identifier issued by Telegram")
     telegram_api_hash:str = Field(default="", description="Secret application hash issued alongside telegram_api_id")
     telegram_channel:str = Field(default="", description="Telegram channel to monitor")
     telegram_phone:str = Field(default="", description="Phone number of the Telegram user account used by Telethon to authenticate, including the international country code")
