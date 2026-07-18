@@ -51,3 +51,11 @@ Use typed function signatures for public service and integration methods. Raise 
 ## Coding Style & Naming Conventions
 
 Use standard Python style with 4-space indentation. Prefer explicit imports and keep service classes in `src/service/` named after their workflow concern. Use `snake_case` for functions, variables, and settings fields; use `PascalCase` for classes. Keep configuration access centralized through `src.config.settings.settings` rather than reading environment variables directly in services. Put external API details in `src/integration/`, not in service methods.
+
+## Test Architecture
+
+- `tests/unit/` tests one function or class in isolation; collaborators are faked or mocked.
+- `tests/integration/` tests multiple application components together while external networks remain isolated.
+- `tests/e2e/` tests a complete workflow through its observable outcome while faking external services.
+
+Each tier must be independently discoverable with `unittest`. CI runs the tiers separately. Tests must be deterministic, require no real credentials, and never place live trades.

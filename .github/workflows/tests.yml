@@ -7,9 +7,19 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Python tests
+  tests:
+    name: ${{ matrix.name }} tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Unit
+            directory: tests/unit
+          - name: Integration
+            directory: tests/integration
+          - name: End-to-end
+            directory: tests/e2e
 
     steps:
       - name: Check out repository
@@ -26,8 +36,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests
+      - name: Run ${{ matrix.name }} tests
+        run: python -m unittest discover -s "${{ matrix.directory }}" -p "test_*.py" -v
 
       - name: Compile Python sources
-        run: python -m compileall src tests
+        run: python -m compileall main.py src tests

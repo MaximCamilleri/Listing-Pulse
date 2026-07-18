@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import threading
 import unittest
 from decimal import Decimal
 
@@ -7,7 +9,7 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewOrderResponse,
 )
 
-from integration.binance_integration import BinanceClient
+from src.integration.binance_integration import BinanceIntegration
 
 
 class FakeResponse:
@@ -38,23 +40,35 @@ class FakeRestApi:
         return FakeResponse(NewAlgoOrderResponse(algoId=201))
 
 
+class BlockingRestApi(FakeRestApi):
+    def __init__(self, release_request):
+        super().__init__()
+        self.release_request = release_request
+        self.request_started = threading.Event()
+
+    def new_order(self, **kwargs):
+        self.request_started.set()
+        self.release_request.wait(timeout=1)
+        return super().new_order(**kwargs)
+
+
 class FakeSdkClient:
     def __init__(self):
         self.rest_api = FakeRestApi()
 
 
-class BinanceClientTests(unittest.TestCase):
+class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         logging.disable(logging.CRITICAL)
 
     def tearDown(self):
         logging.disable(logging.NOTSET)
 
-    def test_place_market_order_submits_expected_sdk_parameters(self):
-        client = BinanceClient.__new__(BinanceClient)
+    async def test_place_market_order_submits_expected_sdk_parameters(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
         client.client = FakeSdkClient()
 
-        response = client.place_market_order(
+        response = await client.place_market_order(
             symbol="BTCUSDT",
             side="BUY",
             quantity=Decimal("1.25"),
@@ -76,11 +90,11 @@ class BinanceClientTests(unittest.TestCase):
             ],
         )
 
-    def test_place_trailing_stop_order_submits_expected_sdk_parameters(self):
-        client = BinanceClient.__new__(BinanceClient)
+    async def test_place_trailing_stop_order_submits_expected_sdk_parameters(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
         client.client = FakeSdkClient()
 
-        response = client.place_trailing_stop_order(
+        response = await client.place_trailing_stop_order(
             symbol="BTCUSDT",
             side="SELL",
             quantity=Decimal("1.25"),
@@ -104,6 +118,28 @@ class BinanceClientTests(unittest.TestCase):
                 }
             ],
         )
+
+    async def test_market_order_does_not_block_event_loop(self):
+        release_request = threading.Event()
+        rest_api = BlockingRestApi(release_request)
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeSdkClient()
+        client.client.rest_api = rest_api
+
+        order_task = asyncio.create_task(
+            client.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+        )
+        try:
+            request_started = await asyncio.to_thread(
+                rest_api.request_started.wait,
+                1,
+            )
+            self.assertTrue(request_started)
+            await asyncio.wait_for(asyncio.sleep(0), timeout=0.1)
+        finally:
+            release_request.set()
+
+        await order_task
 
 
 if __name__ == "__main__":
