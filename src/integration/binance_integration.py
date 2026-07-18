@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 
 from binance_common.configuration import ConfigurationRestAPI
@@ -32,12 +33,13 @@ class BinanceIntegration:
             settings.trade_environment == "DEMO",
         )
 
-    def place_market_order(
+    async def place_market_order(
         self,
         symbol: str,
         side: str,
         quantity: Decimal,
     ) -> NewOrderResponse:
+        """Place a market order without blocking the caller's event loop."""
         logger.info(
             "Submitting Binance market order symbol=%s side=%s quantity=%s",
             symbol,
@@ -45,14 +47,12 @@ class BinanceIntegration:
             quantity,
         )
         try:
-            response = self.client.rest_api.new_order(
-                symbol=symbol,
-                side=side,
-                type="MARKET",
-                quantity=float(quantity),
-                reduce_only=False,
-                new_order_resp_type="RESULT",
-            ).data()
+            response = await asyncio.to_thread(
+                self._place_market_order_sync,
+                symbol,
+                side,
+                quantity,
+            )
         except Exception:
             logger.exception(
                 "Binance market order request failed symbol=%s side=%s quantity=%s",
@@ -71,13 +71,14 @@ class BinanceIntegration:
         )
         return response
 
-    def place_trailing_stop_order(
+    async def place_trailing_stop_order(
         self,
         symbol: str,
         side: str,
         quantity: Decimal,
         callback_rate: Decimal,
     ) -> NewAlgoOrderResponse:
+        """Place a trailing stop without blocking the caller's event loop."""
         logger.info(
             "Submitting Binance trailing stop order "
             "symbol=%s side=%s quantity=%s callback_rate=%s",
@@ -87,17 +88,13 @@ class BinanceIntegration:
             callback_rate,
         )
         try:
-            response = self.client.rest_api.new_algo_order(
-                algo_type="CONDITIONAL",
-                symbol=symbol,
-                side=side,
-                type="TRAILING_STOP_MARKET",
-                quantity=float(quantity),
-                callback_rate=float(callback_rate),
-                reduce_only=True,
-                working_type="MARK_PRICE",
-                new_order_resp_type="RESULT",
-            ).data()
+            response = await asyncio.to_thread(
+                self._place_trailing_stop_order_sync,
+                symbol,
+                side,
+                quantity,
+                callback_rate,
+            )
         except Exception:
             logger.exception(
                 "Binance trailing stop request failed "
