@@ -14,6 +14,11 @@ The project is being built as a long-running worker rather than a web API. That 
 
 The preferred AWS direction is a single-container ECS Fargate service. ECS provides a clean start/stop model through desired count, sends logs to CloudWatch, and avoids managing a server directly. A small Lightsail instance remains the cheapest possible option, but it carries more operational responsibility.
 
+Strategy parameters will be evaluated offline in a dedicated research
+workspace. Historical Binance Futures trade data will be replayed to compare
+entry latency and trailing-stop behavior before those findings are considered
+for production trading changes.
+
 ## Implemented Capabilities
 
 The scraper can poll the Upbit announcements API, optionally filter notices by a configured search term, establish a baseline of already-seen notices, and detect new notices without repeatedly acting on the same notice during a single process run. A blank search term retrieves trade notices without applying a title search filter.
