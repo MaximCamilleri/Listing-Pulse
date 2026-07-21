@@ -300,9 +300,32 @@ class TelegramIntegration:
 
     async def _run_health_heartbeat(self) -> None:
         """Refresh health only while the client and event loop are responsive."""
+        logger.info(
+            "Telegram health heartbeat task started",
+            extra={
+                "interval_seconds": self._healthcheck_interval_seconds,
+            },
+        )
+
+        last_connected: bool | None = None
+
         while not self._stop_event.is_set():
-            if self._client.is_connected():
-                record_health()
+            try:
+                connected = self._client.is_connected()
+
+                if connected != last_connected:
+                    logger.info(
+                        "Telegram health connection state changed",
+                        extra={"connected": connected},
+                    )
+                    last_connected = connected
+
+                if connected:
+                    record_health()
+                    logger.debug("Telegram health heartbeat refreshed")
+
+            except Exception:
+                logger.exception("Telegram health heartbeat refresh failed")
 
             try:
                 await asyncio.wait_for(
