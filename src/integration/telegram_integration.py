@@ -9,6 +9,7 @@ from uuid import uuid4
 from telethon import TelegramClient, events, types, utils
 from telethon.sessions import StringSession
 
+from src.config.settings import settings
 from src.support.logger import get_logger
 from src.support.healthcheck import record_health
 logger = get_logger(__name__)
@@ -301,10 +302,10 @@ class TelegramIntegration:
     async def _run_health_heartbeat(self) -> None:
         """Refresh health only while the client and event loop are responsive."""
         logger.info(
-            "Telegram health heartbeat task started",
-            extra={
-                "interval_seconds": self._healthcheck_interval_seconds,
-            },
+            "Telegram health heartbeat task started "
+            "interval_seconds=%s healthcheck_file=%s",
+            self._healthcheck_interval_seconds,
+            settings.healthcheck_file,
         )
 
         last_connected: bool | None = None
@@ -315,8 +316,8 @@ class TelegramIntegration:
 
                 if connected != last_connected:
                     logger.info(
-                        "Telegram health connection state changed",
-                        extra={"connected": connected},
+                        "Telegram health connection state changed connected=%s",
+                        connected,
                     )
                     last_connected = connected
 
