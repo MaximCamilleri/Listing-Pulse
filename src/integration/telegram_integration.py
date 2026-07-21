@@ -309,7 +309,7 @@ class TelegramIntegration:
                     self._stop_event.wait(),
                     timeout=self._healthcheck_interval_seconds,
                 )
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 pass
 
     async def stop(self) -> None:
@@ -335,7 +335,7 @@ class TelegramIntegration:
                 self._stop_event.wait(),
                 timeout=delay,
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             pass
 
     @staticmethod
