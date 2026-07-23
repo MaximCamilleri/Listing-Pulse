@@ -19,6 +19,18 @@ workspace. Historical Binance Futures trade data will be replayed to compare
 entry latency and trailing-stop behavior before those findings are considered
 for production trading changes.
 
+Signal-to-trade latency will be optimized according to
+`spec/latency_optimization.md`. The current measured DEMO path is dominated by
+serial Binance metadata and configuration requests rather than parsing.
+Planned work will cache bounded-lifetime market rules and leverage brackets,
+parallelize independent cache-miss requests, avoid only those leverage changes
+that are confirmed redundant, and measure hosting-region network latency.
+
+Latency improvements must not remove fresh-price sizing, market-rule
+validation, leverage safety, or observable trailing-stop placement. Production
+rollout remains subject to explicit review and comparison against repeated DEMO
+measurements rather than a single favorable result.
+
 ## Implemented Capabilities
 
 The worker can subscribe to new messages from one configured Telegram channel. The channel may be configured as a username, URL, or numeric channel ID. Telethon events are converted into an integration-neutral message model and placed on a bounded in-memory queue. Messages are processed sequentially, and a failure while handling one message is logged without terminating the listener.

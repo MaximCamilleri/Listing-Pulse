@@ -8,6 +8,7 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
 from src.integration.binance_integration import BinanceIntegration
 from src.config.settings import settings
 from src.support.logger import get_logger
+from src.support.latency_profiler import LatencyProfiler
 
 
 logger = get_logger(__name__)
@@ -24,6 +25,7 @@ class BinanceController:
         quote_amount: Decimal,
         direction: str,
         callback_rate: Decimal,
+        latency_profiler: LatencyProfiler | None = None,
     ) -> tuple[NewOrderResponse, NewAlgoOrderResponse] | None:
         """
         Open a position and place a trailing stop beneath it.
@@ -79,14 +81,28 @@ class BinanceController:
                 f'Direction must be "BUY" or "SELL". "{direction}" is not supported.'
             )
 
-        quantity, notional_value = await self._quote_amount_to_quantity(
-            symbol=symbol,
-            quote_amount=quote_amount,
-        )
-        leverage = await self._get_max_leverage(
-            symbol=symbol,
-            notional_value=notional_value,
-        )
+        if latency_profiler is None:
+            quantity, notional_value = await self._quote_amount_to_quantity(
+                symbol=symbol,
+                quote_amount=quote_amount,
+            )
+            leverage = await self._get_max_leverage(
+                symbol=symbol,
+                notional_value=notional_value,
+            )
+        else:
+            with latency_profiler.span(f"{symbol}.size_validation"):
+                quantity, notional_value = await self._quote_amount_to_quantity(
+                    symbol=symbol,
+                    quote_amount=quote_amount,
+                    latency_profiler=latency_profiler,
+                )
+            with latency_profiler.span(f"{symbol}.leverage_selection"):
+                leverage = await self._get_max_leverage(
+                    symbol=symbol,
+                    notional_value=notional_value,
+                    latency_profiler=latency_profiler,
+                )
 
         logger.info(
             "Placing Binance market entry order "
@@ -101,14 +117,26 @@ class BinanceController:
         )
 
         # Set leverage
-        await self.binance_client.set_initial_leverage(symbol, leverage)
+        if latency_profiler is None:
+            await self.binance_client.set_initial_leverage(symbol, leverage)
+        else:
+            with latency_profiler.span(f"{symbol}.binance.set_leverage"):
+                await self.binance_client.set_initial_leverage(symbol, leverage)
 
         # Open trade
-        entry = await self.binance_client.place_market_order(
-            symbol=symbol,
-            side=direction,
-            quantity=quantity,
-        )
+        if latency_profiler is None:
+            entry = await self.binance_client.place_market_order(
+                symbol=symbol,
+                side=direction,
+                quantity=quantity,
+            )
+        else:
+            with latency_profiler.span(f"{symbol}.binance.market_entry"):
+                entry = await self.binance_client.place_market_order(
+                    symbol=symbol,
+                    side=direction,
+                    quantity=quantity,
+                )
 
         executed_quantity = Decimal(str(entry.executed_qty))
 
@@ -132,12 +160,21 @@ class BinanceController:
         )
 
         # Add trailing stop
-        trailing_stop = await self.binance_client.place_trailing_stop_order(
-            symbol=symbol,
-            side="SELL" if direction == "BUY" else "BUY",
-            quantity=executed_quantity,
-            callback_rate=callback_rate,
-        )
+        if latency_profiler is None:
+            trailing_stop = await self.binance_client.place_trailing_stop_order(
+                symbol=symbol,
+                side="SELL" if direction == "BUY" else "BUY",
+                quantity=executed_quantity,
+                callback_rate=callback_rate,
+            )
+        else:
+            with latency_profiler.span(f"{symbol}.binance.trailing_stop"):
+                trailing_stop = await self.binance_client.place_trailing_stop_order(
+                    symbol=symbol,
+                    side="SELL" if direction == "BUY" else "BUY",
+                    quantity=executed_quantity,
+                    callback_rate=callback_rate,
+                )
 
         logger.info(
             "Placed Binance trailing stop "
@@ -154,8 +191,13 @@ class BinanceController:
         self,
         symbol: str,
         notional_value: Decimal,
+        latency_profiler: LatencyProfiler | None = None,
     ) -> int:
-        leverage_brackets = await self.binance_client.get_leverage_brackets(symbol)
+        if latency_profiler is None:
+            leverage_brackets = await self.binance_client.get_leverage_brackets(symbol)
+        else:
+            with latency_profiler.span(f"{symbol}.binance.leverage_brackets"):
+                leverage_brackets = await self.binance_client.get_leverage_brackets(symbol)
         matching_bracket = next(
             (
                 bracket
@@ -183,15 +225,24 @@ class BinanceController:
         self,
         symbol: str,
         quote_amount: Decimal,
+        latency_profiler: LatencyProfiler | None = None,
     ) -> tuple[Decimal, Decimal]:
-        market_rules = await self.binance_client.get_market_rules(symbol)
+        if latency_profiler is None:
+            market_rules = await self.binance_client.get_market_rules(symbol)
+        else:
+            with latency_profiler.span(f"{symbol}.binance.exchange_info"):
+                market_rules = await self.binance_client.get_market_rules(symbol)
         if market_rules.status != "TRADING":
             raise ValueError(
                 f"Binance futures symbol is not trading: {symbol} "
                 f"(status={market_rules.status})"
             )
         
-        price = await self.binance_client.get_symbol_price(symbol)
+        if latency_profiler is None:
+            price = await self.binance_client.get_symbol_price(symbol)
+        else:
+            with latency_profiler.span(f"{symbol}.binance.price"):
+                price = await self.binance_client.get_symbol_price(symbol)
         if price <= 0:
             raise RuntimeError(f"Binance returned an invalid price for {symbol}: {price}")
         

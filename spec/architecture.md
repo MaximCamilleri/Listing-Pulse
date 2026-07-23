@@ -54,6 +54,30 @@ permitted for the intended notional before submitting the entry. Raw exchange
 metadata, price, leverage-bracket, and leverage-change calls remain in the
 Binance integration layer.
 
+### Latency Optimization
+
+The approved signal-to-trade latency analysis and implementation plan are
+recorded in `spec/latency_optimization.md`. Optimization must preserve all
+trading validations and stop-placement safety.
+
+Binance market rules and account-specific leverage brackets may be cached in
+memory with bounded freshness, explicit refresh behavior, and safe failure
+semantics. A symbol missing from cached exchange information must trigger one
+immediate refresh before rejection. A leverage-change request may be skipped
+only when controller state confirms that the desired leverage is already set;
+unknown or invalidated state requires confirmation through Binance.
+
+On cache misses, independent exchange-information, price, and leverage-bracket
+requests should run concurrently. A fresh price and the market-entry request
+remain on the critical path. Trailing-stop placement must remain an observed
+part of the order workflow and must not be detached merely to reduce handler
+completion time.
+
+Latency instrumentation must distinguish Telegram receipt, queue wait,
+handler-to-entry, notice-to-entry, and entry-to-stop timing. Reports must
+identify nested versus exclusive spans and account for overlapping multi-symbol
+tasks.
+
 ## Coding Best Practices
 
 Prefer clear, explicit dependencies over hidden global state. Use singletons only for stable process-wide infrastructure where repeated construction is wasteful or risky, such as settings or a configured logger. Do not use singletons for workflow services that hold mutable request, polling, order, or account state.

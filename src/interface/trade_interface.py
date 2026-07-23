@@ -3,6 +3,7 @@ from src.control.binance_controller import BinanceController
 from src.control.message_parser import parse_upbit_telegram_notice
 from src.support.logger import get_logger
 from src.config.settings import settings
+from src.support.latency_profiler import LatencyProfiler
 import asyncio
 import threading
 from datetime import datetime, timezone
@@ -15,13 +16,17 @@ async def _place_order_and_log_latency(
     message: TelegramMessage,
     pair: str,
     trade_control: BinanceController,
+    latency_profiler: LatencyProfiler | None = None,
 ) -> None:
-    result = await trade_control.place_market_order(
-        symbol=pair,
-        quote_amount=settings.order_quote_amount,
-        direction=settings.order_direction,
-        callback_rate=settings.order_callback_rate,
-    )
+    kwargs = {
+        "symbol": pair,
+        "quote_amount": settings.order_quote_amount,
+        "direction": settings.order_direction,
+        "callback_rate": settings.order_callback_rate,
+    }
+    if latency_profiler is not None:
+        kwargs["latency_profiler"] = latency_profiler
+    result = await trade_control.place_market_order(**kwargs)
     if result is None:
         return
 
@@ -51,9 +56,14 @@ async def _place_order_and_log_latency(
 async def _trigger_action(
     message: TelegramMessage,
     trade_control: BinanceController,
+    latency_profiler: LatencyProfiler | None = None,
 ) -> None:
     logger.info("Received new telegram message")
-    target_assets = parse_upbit_telegram_notice(message)
+    if latency_profiler is None:
+        target_assets = parse_upbit_telegram_notice(message)
+    else:
+        with latency_profiler.span("notice.parse_and_filter"):
+            target_assets = parse_upbit_telegram_notice(message)
 
     if not target_assets:
         logger.info("Skipping notice: No new KRW listings")
@@ -73,17 +83,22 @@ async def _trigger_action(
                 message=message,
                 pair=pair,
                 trade_control=trade_control,
+                latency_profiler=latency_profiler,
             )
         )
 
     await asyncio.gather(*order_tasks)
 
 
-async def start_trader(stop_event: threading.Event | None = None):
+async def start_trader(
+    stop_event: threading.Event | None = None,
+    trade_control: BinanceController | None = None,
+    message_handler=None,
+):
     stop_event = stop_event or threading.Event()
 
     # Trade Setup
-    trade_control = BinanceController()
+    trade_control = trade_control or BinanceController()
 
     async def trigger_action(message: TelegramMessage) -> None:
         await _trigger_action(message, trade_control)
@@ -104,7 +119,7 @@ async def start_trader(stop_event: threading.Event | None = None):
     trigger_control = TelegramController(
         telegram_kwargs = telegram_kwargs, 
         channel = settings.telegram_channel,
-        message_handler = trigger_action
+        message_handler = message_handler or trigger_action
     )
 
     controller_task = asyncio.create_task(

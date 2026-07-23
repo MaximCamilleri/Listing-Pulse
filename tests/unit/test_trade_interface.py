@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from src.config.settings import settings
 from src.integration.telegram_integration import TelegramMessage
 from src.interface.trade_interface import _trigger_action
+from src.support.latency_profiler import LatencyProfiler
 
 
 def make_message(date: datetime | None = None) -> TelegramMessage:
@@ -22,6 +23,29 @@ def make_message(date: datetime | None = None) -> TelegramMessage:
 
 
 class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_latency_profiler_is_forwarded_to_trade_controller(self):
+        trade_control = AsyncMock()
+        trade_control.place_market_order.return_value = None
+        profiler = LatencyProfiler()
+
+        with patch(
+            "src.interface.trade_interface.parse_upbit_telegram_notice",
+            return_value=["BTC"],
+        ):
+            await _trigger_action(
+                make_message(),
+                trade_control,
+                latency_profiler=profiler,
+            )
+
+        self.assertIs(
+            trade_control.place_market_order.await_args.kwargs["latency_profiler"],
+            profiler,
+        )
+        self.assertTrue(
+            any(span.name == "notice.parse_and_filter" for span in profiler.spans)
+        )
+
     async def test_places_one_order_per_unique_asset_with_configured_quote(self):
         trade_control = AsyncMock()
         notice_date = datetime(2025, 7, 28, 12, 6, 40, tzinfo=timezone.utc)
