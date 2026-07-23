@@ -225,6 +225,41 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(brackets[0].initial_leverage, 75)
         self.assertEqual(brackets[0].notional_cap, Decimal("50000"))
 
+    async def test_selects_symbol_from_list_leverage_response(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeSdkClient()
+        other_symbol = SimpleNamespace(
+            symbol="BTCUSDT",
+            brackets=[
+                SimpleNamespace(
+                    notional_floor=0,
+                    notional_cap=50000,
+                    initial_leverage=125,
+                )
+            ],
+        )
+        target_symbol = SimpleNamespace(
+            symbol="SOONUSDT",
+            brackets=[
+                SimpleNamespace(
+                    notional_floor=0,
+                    notional_cap=10000,
+                    initial_leverage=50,
+                )
+            ],
+        )
+        client.client.rest_api.notional_and_leverage_brackets = (
+            lambda symbol: FakeResponse(
+                SimpleNamespace(actual_instance=[other_symbol, target_symbol])
+            )
+        )
+
+        brackets = await client.get_leverage_brackets("SOONUSDT")
+
+        self.assertEqual(len(brackets), 1)
+        self.assertEqual(brackets[0].initial_leverage, 50)
+        self.assertEqual(brackets[0].notional_cap, Decimal("10000"))
+
     async def test_sets_initial_leverage(self):
         client = BinanceIntegration.__new__(BinanceIntegration)
         client.client = FakeSdkClient()

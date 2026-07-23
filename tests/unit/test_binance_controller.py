@@ -1,6 +1,7 @@
 import logging
 import unittest
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewAlgoOrderResponse,
@@ -96,6 +97,25 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         settings.trading_enabled = self.original_trading_enabled
         logging.disable(logging.NOTSET)
+
+    async def test_disabled_trading_makes_no_binance_requests(self):
+        settings.trading_enabled = False
+        client = AsyncMock()
+        service = BinanceController(binance_client=client)
+
+        result = await service.place_market_order(
+            symbol="BTCUSDT",
+            quote_amount=Decimal("100"),
+            direction="BUY",
+            callback_rate=Decimal("1"),
+        )
+
+        self.assertIsNone(result)
+        client.get_market_rules.assert_not_awaited()
+        client.get_symbol_price.assert_not_awaited()
+        client.get_leverage_brackets.assert_not_awaited()
+        client.set_initial_leverage.assert_not_awaited()
+        client.place_market_order.assert_not_awaited()
 
     async def test_buy_order_places_entry_and_sell_trailing_stop(self):
         client = FakeBinanceClient()

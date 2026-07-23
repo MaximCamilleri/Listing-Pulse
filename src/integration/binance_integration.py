@@ -162,10 +162,19 @@ class BinanceIntegration:
             symbol,
         )
         bracket_response = response.data().actual_instance
-        if bracket_response is None or isinstance(bracket_response, list):
+        if isinstance(bracket_response, list):
+            bracket_response = next(
+                (
+                    item
+                    for item in bracket_response
+                    if item.symbol == symbol
+                ),
+                None,
+            )
+        if bracket_response is None:
             raise RuntimeError(f"Binance returned no leverage brackets for {symbol}")
 
-        return [
+        brackets = [
             BinanceLeverageBracket(
                 notional_floor=Decimal(str(bracket.notional_floor)),
                 notional_cap=Decimal(str(bracket.notional_cap)),
@@ -173,6 +182,9 @@ class BinanceIntegration:
             )
             for bracket in bracket_response.brackets or []
         ]
+        if not brackets:
+            raise RuntimeError(f"Binance returned empty leverage brackets for {symbol}")
+        return brackets
 
     async def set_initial_leverage(self, symbol: str, leverage: int) -> None:
         """Set the account's initial leverage for one futures symbol."""
