@@ -3,6 +3,7 @@ import logging
 import threading
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
 
 from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewAlgoOrderResponse,
@@ -24,6 +25,7 @@ class FakeRestApi:
     def __init__(self):
         self.new_order_calls = []
         self.new_algo_order_calls = []
+        self.leverage_calls = []
 
     def new_order(self, **kwargs):
         self.new_order_calls.append(kwargs)
@@ -38,6 +40,63 @@ class FakeRestApi:
     def new_algo_order(self, **kwargs):
         self.new_algo_order_calls.append(kwargs)
         return FakeResponse(NewAlgoOrderResponse(algoId=201))
+
+    def exchange_information(self):
+        return FakeResponse(
+            SimpleNamespace(
+                symbols=[
+                    SimpleNamespace(
+                        symbol="SOONUSDT",
+                        status="TRADING",
+                        filters=[
+                            SimpleNamespace(
+                                filter_type="MARKET_LOT_SIZE",
+                                step_size="1",
+                                min_qty="1",
+                                max_qty="1000000",
+                                notional=None,
+                            ),
+                            SimpleNamespace(
+                                filter_type="MIN_NOTIONAL",
+                                step_size=None,
+                                min_qty=None,
+                                max_qty=None,
+                                notional="5",
+                            ),
+                        ],
+                    )
+                ]
+            )
+        )
+
+    def symbol_price_ticker_v2(self, symbol):
+        return FakeResponse(
+            SimpleNamespace(
+                actual_instance=SimpleNamespace(symbol=symbol, price="0.50")
+            )
+        )
+
+    def notional_and_leverage_brackets(self, symbol):
+        return FakeResponse(
+            SimpleNamespace(
+                actual_instance=SimpleNamespace(
+                    symbol=symbol,
+                    brackets=[
+                        SimpleNamespace(
+                            notional_floor=0,
+                            notional_cap=50000,
+                            initial_leverage=75,
+                        )
+                    ],
+                )
+            )
+        )
+
+    def change_initial_leverage(self, symbol, leverage):
+        self.leverage_calls.append(
+            {"symbol": symbol, "leverage": leverage}
+        )
+        return FakeResponse(SimpleNamespace(symbol=symbol, leverage=leverage))
 
 
 class BlockingRestApi(FakeRestApi):
@@ -140,6 +199,42 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
             release_request.set()
 
         await order_task
+
+    async def test_returns_market_sizing_rules(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeSdkClient()
+
+        rules = await client.get_market_rules("SOONUSDT")
+
+        self.assertEqual(rules.symbol, "SOONUSDT")
+        self.assertEqual(rules.status, "TRADING")
+        self.assertEqual(rules.step_size, Decimal("1"))
+        self.assertEqual(rules.min_quantity, Decimal("1"))
+        self.assertEqual(rules.max_quantity, Decimal("1000000"))
+        self.assertEqual(rules.min_notional, Decimal("5"))
+
+    async def test_returns_symbol_price_and_leverage_brackets(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeSdkClient()
+
+        price = await client.get_symbol_price("SOONUSDT")
+        brackets = await client.get_leverage_brackets("SOONUSDT")
+
+        self.assertEqual(price, Decimal("0.50"))
+        self.assertEqual(len(brackets), 1)
+        self.assertEqual(brackets[0].initial_leverage, 75)
+        self.assertEqual(brackets[0].notional_cap, Decimal("50000"))
+
+    async def test_sets_initial_leverage(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeSdkClient()
+
+        await client.set_initial_leverage("SOONUSDT", 75)
+
+        self.assertEqual(
+            client.client.rest_api.leverage_calls,
+            [{"symbol": "SOONUSDT", "leverage": 75}],
+        )
 
 
 if __name__ == "__main__":

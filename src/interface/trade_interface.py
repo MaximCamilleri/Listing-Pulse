@@ -18,7 +18,7 @@ async def _place_order_and_log_latency(
 ) -> None:
     result = await trade_control.place_market_order(
         symbol=pair,
-        quantity=settings.order_quantity,
+        quote_amount=settings.order_quote_amount,
         direction=settings.order_direction,
         callback_rate=settings.order_callback_rate,
     )
@@ -65,7 +65,7 @@ async def _trigger_action(
 
     order_tasks = []
     for asset in target_assets:
-        pair = asset + settings.binance_symbol_quote_asset
+        pair = asset + settings.order_quote_asset
         logger.info("Placing trade on: %s", pair)
 
         order_tasks.append(

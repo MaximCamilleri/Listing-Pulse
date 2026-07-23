@@ -44,6 +44,16 @@ Worker health is measured by a file heartbeat rather than an HTTP endpoint. Whil
 
 Trading is guarded by `trading_enabled`. Keep it false for local development unless explicitly testing the Binance order workflow. Production deployments must set `trade_environment`, `trading_enabled`, order settings, scraper settings, and Binance credentials through the deployment environment.
 
+Trade size is configured as quote-asset notional rather than base-asset
+quantity. Before placing an entry, the Binance controller must retrieve the
+current symbol price and `MARKET_LOT_SIZE`/`MIN_NOTIONAL` exchange filters,
+round the derived base quantity down to a valid step, and reject unavailable,
+non-trading, undersized, or oversized symbols. It must retrieve the
+account-specific leverage brackets and set the highest initial leverage
+permitted for the intended notional before submitting the entry. Raw exchange
+metadata, price, leverage-bracket, and leverage-change calls remain in the
+Binance integration layer.
+
 ## Coding Best Practices
 
 Prefer clear, explicit dependencies over hidden global state. Use singletons only for stable process-wide infrastructure where repeated construction is wasteful or risky, such as settings or a configured logger. Do not use singletons for workflow services that hold mutable request, polling, order, or account state.

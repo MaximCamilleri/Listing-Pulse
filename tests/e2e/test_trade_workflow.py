@@ -61,7 +61,7 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
 
         binance.place_market_order.assert_awaited_once_with(
             symbol="BTCUSDT",
-            quantity=settings.order_quantity,
+            quote_amount=settings.order_quote_amount,
             direction=settings.order_direction,
             callback_rate=settings.order_callback_rate,
         )

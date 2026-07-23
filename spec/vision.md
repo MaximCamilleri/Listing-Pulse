@@ -25,19 +25,29 @@ The worker can subscribe to new messages from one configured Telegram channel. T
 
 The Telegram connection uses Telethon's automatic reconnect support plus an application-level exponential-backoff supervisor. It uses a serialized Telegram session supplied through configuration and drains messages already accepted into the queue during graceful shutdown.
 
-The Binance controller supports USDT-margined futures on Binance testnet (`DEMO`) or production (`PROD`). It validates the symbol, positive quantity, `BUY` or `SELL` direction, and a callback rate from 0.1% through 10%. It places a market entry, verifies that a positive quantity was executed, and then places a reduce-only trailing stop in the opposite direction using mark price as the working price. Synchronous SDK requests run off the application event loop.
+The Binance controller supports USDT-margined futures on Binance testnet
+(`DEMO`) or production (`PROD`). Trade size is configured as quote-asset
+notional: for example, `100` for `SOONUSDT` targets up to 100 USDT of SOON
+exposure at the price observed immediately before submission. The controller
+validates the symbol and exchange sizing rules, rounds the base quantity down
+to the valid market-order step, selects and sets the highest leverage Binance
+permits for that notional bracket, and validates the `BUY` or `SELL` direction
+and callback rate from 0.1% through 10%. It places a market entry, verifies
+that a positive quantity was executed, and then places a reduce-only trailing
+stop for the executed quantity in the opposite direction using mark price as
+the working price. Synchronous SDK requests run off the application event
+loop.
 
 Trading is guarded by `TRADING_ENABLED`, which defaults to false. When disabled, a received message reaches the trade handler but no Binance order request is made.
 
 The end-to-end trade trigger filters Telegram messages for Upbit KRW listing
 announcements, parses one or more listed asset symbols, removes duplicate
 symbols within a notice, and concurrently attempts the configured Binance
-futures trade for each unique asset using `BINANCE_SYMBOL_QUOTE_ASSET` as the
+futures trade for each unique asset using `ORDER_QUOTE_ASSET` as the
 quote asset. For every successfully opened order, the worker logs the elapsed
 time from the Telegram notice timestamp to Binance's entry-order update
 timestamp. Duplicate-message protection across separate Telegram messages or
-process restarts is not yet implemented. `NOTICE_SYMBOL_PATTERN` remains
-reserved for future parsing behavior and is not used by the current workflow.
+process restarts is not yet implemented.
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 

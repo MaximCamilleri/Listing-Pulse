@@ -35,11 +35,16 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
                 "src.interface.trade_interface.parse_upbit_telegram_notice",
                 return_value=["BTC", "ETH", "BTC"],
             ),
-            patch.object(settings, "binance_symbol_quote_asset", "USDC"),
+            patch.object(settings, "order_quote_asset", "USDC"),
         ):
             await _trigger_action(make_message(notice_date), trade_control)
 
         self.assertEqual(trade_control.place_market_order.await_count, 2)
+        for call in trade_control.place_market_order.await_args_list:
+            self.assertEqual(
+                call.kwargs["quote_amount"],
+                settings.order_quote_amount,
+            )
         self.assertEqual(
             [call.kwargs["symbol"] for call in trade_control.place_market_order.await_args_list],
             ["BTCUSDC", "ETHUSDC"],

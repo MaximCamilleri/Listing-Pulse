@@ -69,19 +69,9 @@ class Settings(BaseSettings):
     
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
-    order_quantity: Decimal = Field(default=Decimal("0"), description="Order quantity")
+    order_quote_amount: Decimal = Field(default=Decimal("0"), ge=0, description="Target position notional denominated in the symbol's quote asset")
     order_callback_rate: Decimal = Field(default=Decimal(5), description=f"Trailing stop distance. 5 means 5% off price")
-    binance_symbol_quote_asset: str = Field(
-        default="USDT",
-        description="Quote asset appended to parsed notice symbols for Binance futures",
-    )
-    notice_symbol_pattern: str = Field(
-        default="",
-        description=(
-            "Optional regex used to parse the base asset from a notice title. "
-            "Use a named 'symbol' group or the first capture group."
-        ),
-    )
+    order_quote_asset: str = Field(default="USDT", description="Quote asset appended to parsed notice symbols for Binance futures",)
 
     # Binance
     binance_api_key: str = Field(default="", description="")
