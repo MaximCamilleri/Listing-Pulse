@@ -22,6 +22,12 @@ The application is a Python service that monitors Upbit announcement data and pr
 
 Do not add new top-level folders under `src/` without human review and an update to this file.
 
+Research and strategy analysis live in the root-level `research/` directory.
+Notebooks may orchestrate experiments, but reusable market-data and simulation
+logic belongs in typed Python modules there so it can be tested independently.
+Research code may read public exchange market data but must remain separate
+from production order-placement controllers and must never place live trades.
+
 ## Configuration
 
 Runtime configuration must flow through `src.config.settings.settings`, backed by `pydantic-settings` and `.env`. Services should not read environment variables directly. Secrets such as Binance API keys must remain in `.env` or the deployment secret manager and must not be committed.
