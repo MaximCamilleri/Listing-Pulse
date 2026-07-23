@@ -1,11 +1,83 @@
 from src.control.telegram_controller import TelegramController, TelegramMessage
 from src.control.binance_controller import BinanceController
+from src.control.message_parser import parse_upbit_telegram_notice
 from src.support.logger import get_logger
 from src.config.settings import settings
 import asyncio
 import threading
+from datetime import datetime, timezone
 
 logger = get_logger(__name__)
+
+
+async def _place_order_and_log_latency(
+    *,
+    message: TelegramMessage,
+    pair: str,
+    trade_control: BinanceController,
+) -> None:
+    result = await trade_control.place_market_order(
+        symbol=pair,
+        quantity=settings.order_quantity,
+        direction=settings.order_direction,
+        callback_rate=settings.order_callback_rate,
+    )
+    if result is None:
+        return
+
+    entry, _ = result
+    order_opened_at = datetime.fromtimestamp(
+        entry.update_time / 1_000,
+        tz=timezone.utc,
+    )
+    notice_placed_at = message.date
+    if notice_placed_at.tzinfo is None:
+        notice_placed_at = notice_placed_at.replace(tzinfo=timezone.utc)
+
+    latency_seconds = (order_opened_at - notice_placed_at).total_seconds()
+    logger.info(
+        "Opened order from Telegram notice "
+        "symbol=%s channel_id=%s message_id=%s latency_seconds=%.3f "
+        "notice_placed_at=%s order_opened_at=%s",
+        pair,
+        message.channel_id,
+        message.message_id,
+        latency_seconds,
+        notice_placed_at.isoformat(),
+        order_opened_at.isoformat(),
+    )
+
+
+async def _trigger_action(
+    message: TelegramMessage,
+    trade_control: BinanceController,
+) -> None:
+    logger.info("Received new telegram message")
+    target_assets = parse_upbit_telegram_notice(message)
+
+    if not target_assets:
+        logger.info("Skipping notice: No new KRW listings")
+        return
+
+    # Preserve notice order while preventing duplicate orders for one asset.
+    target_assets = list(dict.fromkeys(target_assets))
+    logger.info("New KRW listing for: %s", target_assets)
+
+    order_tasks = []
+    for asset in target_assets:
+        pair = asset + settings.binance_symbol_quote_asset
+        logger.info("Placing trade on: %s", pair)
+
+        order_tasks.append(
+            _place_order_and_log_latency(
+                message=message,
+                pair=pair,
+                trade_control=trade_control,
+            )
+        )
+
+    await asyncio.gather(*order_tasks)
+
 
 async def start_trader(stop_event: threading.Event | None = None):
     stop_event = stop_event or threading.Event()
@@ -13,13 +85,8 @@ async def start_trader(stop_event: threading.Event | None = None):
     # Trade Setup
     trade_control = BinanceController()
 
-    async def _trigger_action(message:TelegramMessage):
-        await trade_control.place_market_order(
-            symbol = "BTCUSDT",
-            quantity = settings.order_quantity,
-            direction = settings.order_direction,
-            callback_rate = settings.order_callback_rate,
-        )
+    async def trigger_action(message: TelegramMessage) -> None:
+        await _trigger_action(message, trade_control)
 
     # Listener Setup
     telegram_kwargs = {
@@ -37,7 +104,7 @@ async def start_trader(stop_event: threading.Event | None = None):
     trigger_control = TelegramController(
         telegram_kwargs = telegram_kwargs, 
         channel = settings.telegram_channel,
-        message_handler = _trigger_action
+        message_handler = trigger_action
     )
 
     controller_task = asyncio.create_task(
