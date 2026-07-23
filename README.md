@@ -17,10 +17,9 @@ This project runs as a long-lived worker process:
 python main.py
 ```
 
-It does not need a web API for the scraper-to-trade workflow. The process polls
-Upbit, records new notice IDs in memory, and passes new notices to an injected
-interface-layer handler. The default handler only places Binance orders when
-`TRADING_ENABLED=true`.
+It does not need a web API for the Telegram-to-trade workflow. The process
+listens for messages from the configured Telegram channel and passes them to
+the interface-layer trading handler.
 
 To run only the scraper and record new notices without taking action on them:
 
@@ -39,6 +38,11 @@ The trade command refuses to initialize Binance unless `TRADING_ENABLED=true`.
 Both scripts log to stdout and `logs/application.log`; file logs rotate daily at
 UTC midnight and are retained for seven days by default.
 
+Container health is represented by `logs/heartbeat`. The application
+refreshes it only while Telethon is connected and the event loop remains
+responsive. Configure its interval and maximum age with
+`HEALTHCHECK_INTERVAL_SECONDS` and `HEALTHCHECK_MAX_AGE_SECONDS`.
+
 ## AWS Hosting
 
 The preferred managed hosting option is a single-container ECS Fargate service:
@@ -53,3 +57,15 @@ The preferred managed hosting option is a single-container ECS Fargate service:
 
 The lowest-cost option is a small Lightsail Linux instance running `python
 main.py` under `systemd`, but that leaves more server maintenance to the owner.
+
+## Tests
+
+- `tests/unit/`: one function or class with collaborators isolated.
+- `tests/integration/`: multiple application components working together.
+- `tests/e2e/`: a complete workflow with external service boundaries faked.
+
+```bash
+python -m unittest discover -s tests/unit -p "test_*.py" -v
+python -m unittest discover -s tests/integration -p "test_*.py" -v
+python -m unittest discover -s tests/e2e -p "test_*.py" -v
+```
