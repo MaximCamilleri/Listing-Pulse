@@ -4,13 +4,13 @@ This document records the non-technical direction of the project. It should stay
 
 ## Goal
 
-The project exists to capitalize on the short window between an Upbit listing announcement and the expected market reaction. The intended end state is an always-available AWS-hosted worker that detects relevant Upbit notices and automatically prepares or places Binance futures trades with minimal delay.
+The project exists to capitalize on the short window between an Upbit listing announcement and the expected market reaction. The intended end state is an always-available AWS-hosted worker that receives relevant Upbit listing signals and automatically places Binance futures trades with minimal delay.
 
-The system should remain easy to control. Once hosted, the operator must be able to start or stop the service at any time and inspect logs to understand what the scraper saw, what decisions it made, and whether any trade action was attempted.
+The system should remain easy to control. Once hosted, the operator must be able to start or stop the service at any time and inspect logs to understand what the listener received, what decisions it made, and whether any trade action was attempted.
 
 ## Current Direction
 
-The project is being built as a long-running worker rather than a web API. That direction was chosen because the core workflow is not request/response driven: the service continuously monitors Upbit, identifies new notices, and reacts internally. Hosting it as a worker keeps the runtime simpler, cheaper, and closer to the actual job it performs.
+The project is being built as a long-running worker rather than a web API. The current signal source is a configured Telegram channel, monitored through a user-authenticated Telethon session. This direction was chosen because the core workflow is event driven: the service waits for new channel messages and reacts internally. Hosting it as a worker keeps the runtime simpler, cheaper, and closer to the actual job it performs.
 
 The preferred AWS direction is a single-container ECS Fargate service. ECS provides a clean start/stop model through desired count, sends logs to CloudWatch, and avoids managing a server directly. A small Lightsail instance remains the cheapest possible option, but it carries more operational responsibility.
 
@@ -21,35 +21,39 @@ for production trading changes.
 
 ## Implemented Capabilities
 
-The scraper can poll the Upbit announcements API, optionally filter notices by a configured search term, establish a baseline of already-seen notices, and detect new notices without repeatedly acting on the same notice during a single process run. A blank search term retrieves trade notices without applying a title search filter.
+The worker can subscribe to new messages from one configured Telegram channel. The channel may be configured as a username, URL, or numeric channel ID. Telethon events are converted into an integration-neutral message model and placed on a bounded in-memory queue. Messages are processed sequentially, and a failure while handling one message is logged without terminating the listener.
 
-The Binance service can validate and place a market entry order, confirm that the entry filled, and then place a trailing stop order in the opposite direction.
+The Telegram connection uses Telethon's automatic reconnect support plus an application-level exponential-backoff supervisor. It uses a serialized Telegram session supplied through configuration and drains messages already accepted into the queue during graceful shutdown.
+
+The Binance controller supports USDT-margined futures on Binance testnet (`DEMO`) or production (`PROD`). It validates the symbol, positive quantity, `BUY` or `SELL` direction, and a callback rate from 0.1% through 10%. It places a market entry, verifies that a positive quantity was executed, and then places a reduce-only trailing stop in the opposite direction using mark price as the working price. Synchronous SDK requests run off the application event loop.
+
+Trading is guarded by `TRADING_ENABLED`, which defaults to false. When disabled, a received message reaches the trade handler but no Binance order request is made.
+
+The current end-to-end trade trigger is deliberately incomplete: every message received from the configured channel attempts the same configured trade on the hard-coded symbol `BTCUSDT`. Message content is not yet classified, filtered, deduplicated, or parsed into one or more listing symbols. The configured `NOTICE_SYMBOL_PATTERN` and `BINANCE_SYMBOL_QUOTE_ASSET` settings are present but are not used by the current workflow.
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 
 The hosted worker exposes polling health without adding a web server. Successful Upbit responses refresh a local heartbeat, and the container becomes unhealthy when the heartbeat is missing or stale relative to its configured polling schedule. This allows ECS to detect and replace a worker whose process is alive but no longer polling successfully.
 
-The scraper-to-trade workflow is modular. `ScraperService` detects new notices and publishes them through an injected handler. The default interface-layer handler parses symbols from the notice title and calls `BinanceService` only when trading is enabled.
-
-The notice parser supports single-asset and multi-asset Upbit titles. For example, a title such as `Market Support for Livepeer(LPT)(KRW, USDT Market), Pocket Network(POKT)(KRW Market)` is interpreted as two Binance futures symbols: `LPTUSDT` and `POKTUSDT`.
+The signal-to-trade workflow is modular. `TelegramIntegration` owns external Telegram connectivity, `TelegramController` owns subscription, buffering, and sequential message dispatch, and the interface layer injects the trade handler. `BinanceController` owns trade validation and order sequencing, while `BinanceIntegration` owns raw SDK calls.
 
 ## Rationale
 
-The architecture separates detection from action so future behavior can change without rewriting the scraper. If a new notice should later send an alert, write to a database, place trades on another exchange, or run multiple actions, that change belongs in the interface layer by replacing or extending the injected handler.
+The architecture separates signal transport from action so future behavior can change without rewriting Telegram connectivity. If a message should later be classified, send an alert, write to a database, place trades on another exchange, or run multiple actions, that change belongs in the controller or interface layer by replacing or extending the injected handler.
 
 Trading is disabled by default because order placement is high risk. The system should be safe during local development and explicit about when automated trading is enabled.
 
 Configuration is centralized so local `.env` values and hosted environment variables behave consistently. Secrets should never be committed or baked into the container image.
 
-Logs are treated as a primary operating interface. Since this is a headless worker, logs must clearly show startup, scraping, notice detection, symbol parsing, trading decisions, order attempts, and failures.
+Logs are treated as a primary operating interface. Since this is a headless worker, logs must clearly show startup, Telegram connection and subscription state, health, message-processing failures, trading decisions, order attempts, and failures.
 
 ## Direction To Preserve
 
-Keep the project focused on fast, reliable detection and controlled trade execution. Avoid adding an API, dashboard, database, or extra infrastructure unless it directly supports reliability, safety, observability, or operational control.
+Keep the project focused on fast, reliable signal reception and controlled trade execution. Avoid adding an API, dashboard, database, or extra infrastructure unless it directly supports reliability, safety, observability, or operational control.
 
-Keep services modular. Individual services should own one business capability. Cross-service workflows should live in `src/interface/`, where runtime behavior can be swapped without changing the underlying scraper or exchange services.
+Keep integrations and controllers modular. External-service details belong in `src/integration/`, application coordination belongs in `src/control/`, and cross-component runtime composition belongs in `src/interface/`.
 
-Keep production safety explicit. Before enabling live trading, duplicate-notice persistence across restarts, order sizing safeguards, symbol availability checks, and production credential handling should be reviewed.
+Keep production safety explicit. Before enabling live trading, implement and review message relevance checks, symbol extraction, duplicate-message protection across restarts, order sizing safeguards, symbol availability checks, partial-fill handling, failure recovery when entry succeeds but stop placement fails, and production credential handling.
 
 ## Maintenance Rule
 
