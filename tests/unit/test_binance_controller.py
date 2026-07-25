@@ -202,7 +202,11 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_leverage_confirmation_is_reconciled(self):
         controller, client, _ = await self.make_controller()
         controller.confirmed_leverage["BTCUSDT"] = 75
-        controller._leverage_confirmed_at["BTCUSDT"] = 0
+        controller._leverage_confirmed_at["BTCUSDT"] = (
+            time.monotonic()
+            - settings.binance_leverage_reconcile_seconds
+            - 1
+        )
 
         await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
 
