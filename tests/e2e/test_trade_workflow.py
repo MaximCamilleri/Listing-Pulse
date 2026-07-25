@@ -47,6 +47,8 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
         binance_controller_class,
     ):
         binance = binance_controller_class.return_value
+        binance.start = AsyncMock()
+        binance.stop = AsyncMock()
         binance.place_market_order = AsyncMock(
             return_value=(
                 SimpleNamespace(
@@ -61,10 +63,14 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
 
         binance.place_market_order.assert_awaited_once_with(
             symbol="BTCUSDT",
-            quote_amount=settings.order_quote_amount,
             direction=settings.order_direction,
             callback_rate=settings.order_callback_rate,
         )
+        binance_controller_class.assert_called_once_with(
+            quote_amount=settings.order_quote_amount
+        )
+        binance.start.assert_awaited_once()
+        binance.stop.assert_awaited_once()
         self.assertEqual(
             WorkflowTelegramController.instance.channel,
             settings.telegram_channel,

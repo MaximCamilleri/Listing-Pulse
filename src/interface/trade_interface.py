@@ -20,7 +20,6 @@ async def _place_order_and_log_latency(
 ) -> None:
     kwargs = {
         "symbol": pair,
-        "quote_amount": settings.order_quote_amount,
         "direction": settings.order_direction,
         "callback_rate": settings.order_callback_rate,
     }
@@ -98,7 +97,10 @@ async def start_trader(
     stop_event = stop_event or threading.Event()
 
     # Trade Setup
-    trade_control = trade_control or BinanceController()
+    trade_control = trade_control or BinanceController(
+        quote_amount=settings.order_quote_amount
+    )
+    await trade_control.start()
 
     async def trigger_action(message: TelegramMessage) -> None:
         await _trigger_action(message, trade_control)
@@ -151,6 +153,7 @@ async def start_trader(
         stop_event.set()
         shutdown_task.cancel()
         await trigger_control.stop()
+        await trade_control.stop()
 
 
 async def _wait_for_shutdown(stop_event: threading.Event) -> None:

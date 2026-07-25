@@ -14,22 +14,11 @@ The project is being built as a long-running worker rather than a web API. The c
 
 The preferred AWS direction is a single-container ECS Fargate service. ECS provides a clean start/stop model through desired count, sends logs to CloudWatch, and avoids managing a server directly. A small Lightsail instance remains the cheapest possible option, but it carries more operational responsibility.
 
-Strategy parameters will be evaluated offline in a dedicated research
-workspace. Historical Binance Futures trade data will be replayed to compare
-entry latency and trailing-stop behavior before those findings are considered
-for production trading changes.
+Strategy parameters will be evaluated offline in a dedicated research workspace. Historical Binance Futures trade data will be replayed to compare entry latency and trailing-stop behavior before those findings are considered for production trading changes.
 
-Signal-to-trade latency will be optimized according to
-`spec/latency_optimization.md`. The current measured DEMO path is dominated by
-serial Binance metadata and configuration requests rather than parsing.
-Planned work will cache bounded-lifetime market rules and leverage brackets,
-parallelize independent cache-miss requests, avoid only those leverage changes
-that are confirmed redundant, and measure hosting-region network latency.
+Signal-to-trade latency will be optimized according to `spec/latency_optimization.md`. The current measured DEMO path is dominated by serial Binance metadata and configuration requests rather than parsing. The worker maintains a live Binance futures market-price stream, caches bounded-lifetime market rules and leverage brackets, avoids only confirmed redundant leverage changes, and calculates quote-notional quantity locally immediately before entry. Missing or stale streamed prices fail closed.
 
-Latency improvements must not remove fresh-price sizing, market-rule
-validation, leverage safety, or observable trailing-stop placement. Production
-rollout remains subject to explicit review and comparison against repeated DEMO
-measurements rather than a single favorable result.
+Latency improvements must not remove bounded-age streamed-price sizing, market-rule validation, leverage safety, or observable trailing-stop placement. Production rollout remains subject to explicit review and comparison against repeated DEMO measurements rather than a single favorable result.
 
 ## Implemented Capabilities
 
@@ -37,29 +26,11 @@ The worker can subscribe to new messages from one configured Telegram channel. T
 
 The Telegram connection uses Telethon's automatic reconnect support plus an application-level exponential-backoff supervisor. It uses a serialized Telegram session supplied through configuration and drains messages already accepted into the queue during graceful shutdown.
 
-The Binance controller supports USDT-margined futures on Binance testnet
-(`DEMO`) or production (`PROD`). Trade size is configured as quote-asset
-notional: for example, `100` for `SOONUSDT` targets up to 100 USDT of SOON
-exposure at the price observed immediately before submission. The controller
-validates the symbol and exchange sizing rules, rounds the base quantity down
-to the valid market-order step, selects and sets the highest leverage Binance
-permits for that notional bracket, and validates the `BUY` or `SELL` direction
-and callback rate from 0.1% through 10%. It places a market entry, verifies
-that a positive quantity was executed, and then places a reduce-only trailing
-stop for the executed quantity in the opposite direction using mark price as
-the working price. Synchronous SDK requests run off the application event
-loop.
+The Binance controller supports USDT-margined futures on Binance testnet (`DEMO`) or production (`PROD`). Trade size is configured as quote-asset notional: for example, `100` for `SOONUSDT` targets up to 100 USDT of SOON exposure at the price observed immediately before submission. The controller validates the symbol and exchange sizing rules, rounds the base quantity down to the valid market-order step, selects and sets the highest leverage Binance permits for that notional bracket, and validates the `BUY` or `SELL` direction and callback rate from 0.1% through 10%. It places a market entry, verifies that a positive quantity was executed, and then places a reduce-only trailing stop for the executed quantity in the opposite direction using mark price as the working price. Synchronous SDK requests run off the application event loop.
 
 Trading is guarded by `TRADING_ENABLED`, which defaults to false. When disabled, a received message reaches the trade handler but no Binance order request is made.
 
-The end-to-end trade trigger filters Telegram messages for Upbit KRW listing
-announcements, parses one or more listed asset symbols, removes duplicate
-symbols within a notice, and concurrently attempts the configured Binance
-futures trade for each unique asset using `ORDER_QUOTE_ASSET` as the
-quote asset. For every successfully opened order, the worker logs the elapsed
-time from the Telegram notice timestamp to Binance's entry-order update
-timestamp. Duplicate-message protection across separate Telegram messages or
-process restarts is not yet implemented.
+The end-to-end trade trigger filters Telegram messages for Upbit KRW listing announcements, parses one or more listed asset symbols, removes duplicate symbols within a notice, and concurrently attempts the configured Binance futures trade for each unique asset using `ORDER_QUOTE_ASSET` as the quote asset. For every successfully opened order, the worker logs the elapsed time from the Telegram notice timestamp to Binance's entry-order update timestamp. Duplicate-message protection across separate Telegram messages or process restarts is not yet implemented.
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 

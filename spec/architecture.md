@@ -22,11 +22,7 @@ The application is a Python service that monitors Upbit announcement data and pr
 
 Do not add new top-level folders under `src/` without human review and an update to this file.
 
-Research and strategy analysis live in the root-level `research/` directory.
-Notebooks may orchestrate experiments, but reusable market-data and simulation
-logic belongs in typed Python modules there so it can be tested independently.
-Research code may read public exchange market data but must remain separate
-from production order-placement controllers and must never place live trades.
+Research and strategy analysis live in the root-level `research/` directory. Notebooks may orchestrate experiments, but reusable market-data and simulation logic belongs in typed Python modules there so it can be tested independently. Research code may read public exchange market data but must remain separate from production order-placement controllers and must never place live trades.
 
 ## Configuration
 
@@ -44,39 +40,17 @@ Worker health is measured by a file heartbeat rather than an HTTP endpoint. Whil
 
 Trading is guarded by `trading_enabled`. Keep it false for local development unless explicitly testing the Binance order workflow. Production deployments must set `trade_environment`, `trading_enabled`, order settings, scraper settings, and Binance credentials through the deployment environment.
 
-Trade size is configured as quote-asset notional rather than base-asset
-quantity. Before placing an entry, the Binance controller must retrieve the
-current symbol price and `MARKET_LOT_SIZE`/`MIN_NOTIONAL` exchange filters,
-round the derived base quantity down to a valid step, and reject unavailable,
-non-trading, undersized, or oversized symbols. It must retrieve the
-account-specific leverage brackets and set the highest initial leverage
-permitted for the intended notional before submitting the entry. Raw exchange
-metadata, price, leverage-bracket, and leverage-change calls remain in the
-Binance integration layer.
+Trade size is configured as quote-asset notional rather than base-asset quantity. A continuously connected Binance futures market stream maintains a bounded-age, in-memory price cache. Immediately before entry, the controller must use a fresh streamed price and cached `MARKET_LOT_SIZE`/`MIN_NOTIONAL` filters, round the derived base quantity down to a valid step, and reject missing or stale prices and unavailable, non-trading, undersized, or oversized symbols. Account-specific leverage brackets remain bounded-age metadata. Raw exchange metadata, streaming, leverage-bracket, and leverage-change calls remain in the Binance integration layer.
 
 ### Latency Optimization
 
-The approved signal-to-trade latency analysis and implementation plan are
-recorded in `spec/latency_optimization.md`. Optimization must preserve all
-trading validations and stop-placement safety.
+The approved signal-to-trade latency analysis and implementation plan are recorded in `spec/latency_optimization.md`. Optimization must preserve all trading validations and stop-placement safety.
 
-Binance market rules and account-specific leverage brackets may be cached in
-memory with bounded freshness, explicit refresh behavior, and safe failure
-semantics. A symbol missing from cached exchange information must trigger one
-immediate refresh before rejection. A leverage-change request may be skipped
-only when controller state confirms that the desired leverage is already set;
-unknown or invalidated state requires confirmation through Binance.
+Binance market rules and account-specific leverage brackets may be cached in memory with bounded freshness, explicit refresh behavior, and safe failure semantics. A symbol missing from cached exchange information must trigger one immediate refresh before rejection. A leverage-change request may be skipped only when controller state confirms that the desired leverage is already set; unknown or invalidated state requires confirmation through Binance.
 
-On cache misses, independent exchange-information, price, and leverage-bracket
-requests should run concurrently. A fresh price and the market-entry request
-remain on the critical path. Trailing-stop placement must remain an observed
-part of the order workflow and must not be detached merely to reduce handler
-completion time.
+Market rules and leverage brackets refresh periodically and publish complete cache snapshots atomically. Maintenance REST requests must wait for active or queued trades, while price-stream updates remain independent. A fresh, bounded-age streamed price is read and quantity is calculated locally on the critical path; no REST price request is required. Trailing-stop placement must remain an observed part of the order workflow.
 
-Latency instrumentation must distinguish Telegram receipt, queue wait,
-handler-to-entry, notice-to-entry, and entry-to-stop timing. Reports must
-identify nested versus exclusive spans and account for overlapping multi-symbol
-tasks.
+Latency instrumentation must distinguish Telegram receipt, queue wait, handler-to-entry, notice-to-entry, and entry-to-stop timing. Reports must identify nested versus exclusive spans and account for overlapping multi-symbol tasks.
 
 ## Coding Best Practices
 

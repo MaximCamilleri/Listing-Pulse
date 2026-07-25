@@ -1,7 +1,9 @@
+import asyncio
 import logging
+import time
 import unittest
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
     NewAlgoOrderResponse,
@@ -14,286 +16,242 @@ from src.integration.binance_integration import (
     BinanceLeverageBracket,
     BinanceMarketRules,
 )
+from src.support.binance_price_cache import BinancePriceCache
 
 
 class FakeBinanceClient:
-    def __init__(
-        self,
-        entry_response=None,
-        trailing_stop_response=None,
-        *,
-        price=Decimal("20"),
-        market_rules=None,
-        leverage_brackets=None,
-    ):
-        self.entry_response = entry_response or NewOrderResponse(
-            orderId=100,
-            status="FILLED",
-            executedQty="1.5",
-        )
-        self.trailing_stop_response = (
-            trailing_stop_response or NewAlgoOrderResponse(algoId=101)
-        )
+    def __init__(self):
+        self.rules = {
+            "BTCUSDT": BinanceMarketRules(
+                symbol="BTCUSDT",
+                status="TRADING",
+                step_size=Decimal("0.1"),
+                min_quantity=Decimal("0.1"),
+                max_quantity=Decimal("100"),
+                min_notional=Decimal("5"),
+            )
+        }
+        self.brackets = {
+            "BTCUSDT": [
+                BinanceLeverageBracket(Decimal("0"), Decimal("50"), 125),
+                BinanceLeverageBracket(Decimal("50"), Decimal("1000"), 75),
+            ]
+        }
         self.market_orders = []
         self.trailing_stop_orders = []
-        self.price = price
-        self.market_rules = market_rules or BinanceMarketRules(
-            symbol="BTCUSDT",
-            status="TRADING",
-            step_size=Decimal("0.1"),
-            min_quantity=Decimal("0.1"),
-            max_quantity=Decimal("100"),
-            min_notional=Decimal("5"),
-        )
-        self.leverage_brackets = leverage_brackets or [
-            BinanceLeverageBracket(
-                notional_floor=Decimal("0"),
-                notional_cap=Decimal("1000"),
-                initial_leverage=125,
-            )
-        ]
         self.leverage_changes = []
+        self.stream_callback = None
 
-    async def get_market_rules(self, symbol):
-        return self.market_rules
+    async def start_price_stream(self, callback):
+        self.stream_callback = callback
 
-    async def get_symbol_price(self, symbol):
-        return self.price
+    async def stop_price_stream(self):
+        self.stream_callback = None
 
-    async def get_leverage_brackets(self, symbol):
-        return self.leverage_brackets
+    async def get_market_rules(self, symbol=None):
+        return self.rules
+
+    async def get_leverage_brackets(self, symbol=None):
+        return self.brackets
 
     async def set_initial_leverage(self, symbol, leverage):
-        self.leverage_changes.append({"symbol": symbol, "leverage": leverage})
+        self.leverage_changes.append((symbol, leverage))
 
     async def place_market_order(self, symbol, side, quantity):
-        self.market_orders.append(
-            {
-                "symbol": symbol,
-                "side": side,
-                "quantity": quantity,
-            }
-        )
-        return self.entry_response
+        self.market_orders.append((symbol, side, quantity))
+        return NewOrderResponse(orderId=100, status="FILLED", executedQty=str(quantity))
 
-    async def place_trailing_stop_order(self, symbol, side, quantity, callback_rate):
+    async def place_trailing_stop_order(
+        self, symbol, side, quantity, callback_rate
+    ):
         self.trailing_stop_orders.append(
-            {
-                "symbol": symbol,
-                "side": side,
-                "quantity": quantity,
-                "callback_rate": callback_rate,
-            }
+            (symbol, side, quantity, callback_rate)
         )
-        return self.trailing_stop_response
+        return NewAlgoOrderResponse(algoId=101)
 
 
 class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         logging.disable(logging.CRITICAL)
-        self.original_trading_enabled = settings.trading_enabled
+        self.original_enabled = settings.trading_enabled
         settings.trading_enabled = True
 
     def tearDown(self):
-        settings.trading_enabled = self.original_trading_enabled
+        settings.trading_enabled = self.original_enabled
         logging.disable(logging.NOTSET)
 
-    async def test_disabled_trading_makes_no_binance_requests(self):
-        settings.trading_enabled = False
-        client = AsyncMock()
-        service = BinanceController(binance_client=client)
-
-        result = await service.place_market_order(
-            symbol="BTCUSDT",
-            quote_amount=Decimal("100"),
-            direction="BUY",
-            callback_rate=Decimal("1"),
-        )
-
-        self.assertIsNone(result)
-        client.get_market_rules.assert_not_awaited()
-        client.get_symbol_price.assert_not_awaited()
-        client.get_leverage_brackets.assert_not_awaited()
-        client.set_initial_leverage.assert_not_awaited()
-        client.place_market_order.assert_not_awaited()
-
-    async def test_buy_order_places_entry_and_sell_trailing_stop(self):
+    async def make_controller(self, quote=Decimal("100")):
         client = FakeBinanceClient()
-        service = BinanceController(binance_client=client)
+        cache = BinancePriceCache()
+        cache.update_message({"s": "BTCUSDT", "c": "20", "E": 123})
+        controller = BinanceController(quote, client, cache)
+        await controller.maintain_trading_env()
+        return controller, client, cache
 
-        entry, trailing_stop = await service.place_market_order(
-            symbol=" btcusdt ",
-            quote_amount=Decimal("30"),
-            direction=" buy ",
-            callback_rate=Decimal("1.0"),
+    async def test_places_entry_and_opposite_trailing_stop_from_live_price(self):
+        controller, client, _ = await self.make_controller(Decimal("30"))
+
+        entry, stop = await controller.place_market_order(
+            " btcusdt ", " buy ", Decimal("1")
         )
 
         self.assertEqual(entry.order_id, 100)
-        self.assertEqual(trailing_stop.algo_id, 101)
-        self.assertEqual(
-            client.leverage_changes,
-            [{"symbol": "BTCUSDT", "leverage": 125}],
-        )
-        self.assertEqual(
-            client.market_orders,
-            [
-                {
-                    "symbol": "BTCUSDT",
-                    "side": "BUY",
-                    "quantity": Decimal("1.5"),
-                }
-            ],
-        )
+        self.assertEqual(stop.algo_id, 101)
+        self.assertEqual(client.market_orders, [("BTCUSDT", "BUY", Decimal("1.5"))])
         self.assertEqual(
             client.trailing_stop_orders,
-            [
-                {
-                    "symbol": "BTCUSDT",
-                    "side": "SELL",
-                    "quantity": Decimal("1.5"),
-                    "callback_rate": Decimal("1.0"),
-                }
-            ],
+            [("BTCUSDT", "SELL", Decimal("1.5"), Decimal("1"))],
         )
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 125)])
 
-    async def test_sell_order_places_entry_and_buy_trailing_stop(self):
+    async def test_reuses_confirmed_leverage(self):
+        controller, client, _ = await self.make_controller()
+
+        await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+        await controller.place_market_order("BTCUSDT", "SELL", Decimal("1"))
+
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 75)])
+
+    async def test_stale_or_missing_price_fails_before_exchange_order(self):
+        now = [10.0]
+        cache = BinancePriceCache(clock=lambda: now[0])
         client = FakeBinanceClient()
-        service = BinanceController(binance_client=client)
+        controller = BinanceController(Decimal("100"), client, cache)
+        await controller.maintain_trading_env()
 
-        await service.place_market_order(
-            symbol="ethusdt",
-            quote_amount=Decimal("40"),
-            direction="SELL",
-            callback_rate=Decimal("0.5"),
+        with self.assertRaisesRegex(RuntimeError, "No live"):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+        cache.update_message({"s": "BTCUSDT", "c": "20"})
+        now[0] += settings.binance_price_max_age_seconds + 1
+        with self.assertRaisesRegex(RuntimeError, "stale"):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+        self.assertEqual(client.market_orders, [])
+
+    async def test_disabled_trading_makes_no_requests(self):
+        settings.trading_enabled = False
+        client = AsyncMock()
+        controller = BinanceController(Decimal("100"), client)
+
+        result = await controller.place_market_order(
+            "BTCUSDT", "BUY", Decimal("1")
         )
 
-        self.assertEqual(client.market_orders[0]["side"], "SELL")
-        self.assertEqual(client.trailing_stop_orders[0]["side"], "BUY")
+        self.assertIsNone(result)
+        client.place_market_order.assert_not_awaited()
 
-    async def test_invalid_inputs_are_rejected_before_any_exchange_call(self):
-        invalid_cases = [
-            {
-                "symbol": "",
-                "quote_amount": Decimal("1"),
-                "direction": "BUY",
-                "callback_rate": Decimal("1"),
-            },
-            {
-                "symbol": "BTCUSDT",
-                "quote_amount": Decimal("0"),
-                "direction": "BUY",
-                "callback_rate": Decimal("1"),
-            },
-            {
-                "symbol": "BTCUSDT",
-                "quote_amount": Decimal("1"),
-                "direction": "HOLD",
-                "callback_rate": Decimal("1"),
-            },
-            {
-                "symbol": "BTCUSDT",
-                "quote_amount": Decimal("1"),
-                "direction": "BUY",
-                "callback_rate": Decimal("0.09"),
-            },
-            {
-                "symbol": "BTCUSDT",
-                "quote_amount": Decimal("1"),
-                "direction": "BUY",
-                "callback_rate": Decimal("10.01"),
-            },
-        ]
+    async def test_disabled_controller_start_does_not_connect_to_binance(self):
+        settings.trading_enabled = False
+        client = AsyncMock()
+        controller = BinanceController(Decimal("100"), client)
 
-        for kwargs in invalid_cases:
-            client = FakeBinanceClient()
-            service = BinanceController(binance_client=client)
+        await controller.start()
+        await controller.stop()
 
-            with self.subTest(kwargs=kwargs):
-                with self.assertRaises(ValueError):
-                    await service.place_market_order(**kwargs)
+        client.start_price_stream.assert_not_awaited()
+        client.get_market_rules.assert_not_awaited()
 
-                self.assertEqual(client.market_orders, [])
-                self.assertEqual(client.trailing_stop_orders, [])
+    async def test_validates_status_minimum_quantity_and_notional(self):
+        controller, client, _ = await self.make_controller(Decimal("1"))
+        with self.assertRaises(ValueError):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
 
-    async def test_unfilled_entry_does_not_place_trailing_stop(self):
-        client = FakeBinanceClient(
-            entry_response=NewOrderResponse(
-                orderId=100,
-                status="EXPIRED",
-                executedQty="0",
-            )
-        )
-        service = BinanceController(binance_client=client)
-
-        with self.assertRaises(RuntimeError):
-            await service.place_market_order(
-                symbol="BTCUSDT",
-                quote_amount=Decimal("20"),
-                direction="BUY",
-                callback_rate=Decimal("1"),
-            )
-
-        self.assertEqual(len(client.market_orders), 1)
-        self.assertEqual(client.trailing_stop_orders, [])
-
-    async def test_quote_amount_is_rounded_down_to_market_step_size(self):
-        client = FakeBinanceClient(
-            price=Decimal("3"),
-            market_rules=BinanceMarketRules(
-                symbol="SOONUSDT",
-                status="TRADING",
-                step_size=Decimal("0.1"),
-                min_quantity=Decimal("0.1"),
-                max_quantity=Decimal("10000"),
-                min_notional=Decimal("5"),
-            ),
-        )
-        service = BinanceController(binance_client=client)
-
-        await service.place_market_order(
-            symbol="SOONUSDT",
-            quote_amount=Decimal("100"),
-            direction="BUY",
-            callback_rate=Decimal("1"),
-        )
-
-        self.assertEqual(
-            client.market_orders[0]["quantity"],
-            Decimal("33.3"),
-        )
-        self.assertLessEqual(
-            client.market_orders[0]["quantity"] * client.price,
-            Decimal("100"),
-        )
-
-    async def test_uses_highest_leverage_for_matching_notional_bracket(self):
-        client = FakeBinanceClient(
-            leverage_brackets=[
-                BinanceLeverageBracket(
-                    notional_floor=Decimal("0"),
-                    notional_cap=Decimal("50"),
-                    initial_leverage=125,
-                ),
-                BinanceLeverageBracket(
-                    notional_floor=Decimal("50"),
-                    notional_cap=Decimal("1000"),
-                    initial_leverage=75,
-                ),
-            ]
-        )
-        service = BinanceController(binance_client=client)
-
-        await service.place_market_order(
+        controller.quote_amount = Decimal("100")
+        client.rules["BTCUSDT"] = BinanceMarketRules(
             symbol="BTCUSDT",
-            quote_amount=Decimal("100"),
-            direction="BUY",
-            callback_rate=Decimal("1"),
+            status="BREAK",
+            step_size=Decimal("0.1"),
+            min_quantity=Decimal("0.1"),
+            max_quantity=Decimal("100"),
+            min_notional=Decimal("5"),
         )
+        controller.market_rules = client.rules
+        with self.assertRaisesRegex(ValueError, "not trading"):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
 
-        self.assertEqual(
-            client.leverage_changes,
-            [{"symbol": "BTCUSDT", "leverage": 75}],
+    async def test_missing_symbol_gets_one_refresh_then_rejection(self):
+        controller, client, _ = await self.make_controller()
+        client.get_market_rules = AsyncMock(return_value=client.rules)
+        client.get_leverage_brackets = AsyncMock(return_value=client.brackets)
+
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            await controller.place_market_order("NEWUSDT", "BUY", Decimal("1"))
+
+        client.get_market_rules.assert_awaited_once()
+        client.get_leverage_brackets.assert_awaited_once()
+
+    async def test_failed_leverage_change_is_not_cached(self):
+        controller, client, _ = await self.make_controller()
+        client.set_initial_leverage = AsyncMock(side_effect=RuntimeError("no"))
+
+        with self.assertRaisesRegex(RuntimeError, "no"):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+
+        self.assertNotIn("BTCUSDT", controller.confirmed_leverage)
+
+    async def test_entry_rejection_invalidates_confirmed_leverage(self):
+        controller, client, _ = await self.make_controller()
+        controller.confirmed_leverage["BTCUSDT"] = 75
+        controller._leverage_confirmed_at["BTCUSDT"] = time.monotonic()
+        client.place_market_order = AsyncMock(side_effect=RuntimeError("rejected"))
+
+        with self.assertRaisesRegex(RuntimeError, "rejected"):
+            await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+
+        self.assertNotIn("BTCUSDT", controller.confirmed_leverage)
+
+    async def test_expired_leverage_confirmation_is_reconciled(self):
+        controller, client, _ = await self.make_controller()
+        controller.confirmed_leverage["BTCUSDT"] = 75
+        controller._leverage_confirmed_at["BTCUSDT"] = 0
+
+        await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
+
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 75)])
+
+    async def test_maintenance_waits_for_trade_but_price_updates_continue(self):
+        controller, client, cache = await self.make_controller()
+        order_started = asyncio.Event()
+        release_order = asyncio.Event()
+
+        async def slow_order(symbol, side, quantity):
+            order_started.set()
+            await release_order.wait()
+            return NewOrderResponse(
+                orderId=100, status="FILLED", executedQty=str(quantity)
+            )
+
+        client.place_market_order = slow_order
+        client.get_market_rules = AsyncMock(return_value=client.rules)
+        trade = asyncio.create_task(
+            controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
         )
+        await order_started.wait()
+        refresh = asyncio.create_task(controller.maintain_trading_env())
+        await asyncio.sleep(0)
+        client.get_market_rules.assert_not_awaited()
+
+        cache.update_message({"s": "BTCUSDT", "c": "21"})
+        self.assertEqual(
+            cache.require("BTCUSDT", settings.binance_price_max_age_seconds).price,
+            Decimal("21"),
+        )
+        release_order.set()
+        await trade
+        await refresh
+        client.get_market_rules.assert_awaited_once()
+
+    async def test_create_periodically_refreshes_and_stop_closes_stream(self):
+        controller, client, _ = await self.make_controller()
+        controller.maintain_trading_env = AsyncMock()
+        with patch.object(
+            settings, "binance_env_refresh_interval_seconds", 0.01
+        ):
+            await controller.start()
+            await asyncio.sleep(0.03)
+            await controller.stop()
+
+        self.assertGreaterEqual(controller.maintain_trading_env.await_count, 2)
+        self.assertIsNone(client.stream_callback)
 
 
 if __name__ == "__main__":

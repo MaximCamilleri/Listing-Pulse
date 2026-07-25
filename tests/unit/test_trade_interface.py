@@ -64,11 +64,6 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
             await _trigger_action(make_message(notice_date), trade_control)
 
         self.assertEqual(trade_control.place_market_order.await_count, 2)
-        for call in trade_control.place_market_order.await_args_list:
-            self.assertEqual(
-                call.kwargs["quote_amount"],
-                settings.order_quote_amount,
-            )
         self.assertEqual(
             [call.kwargs["symbol"] for call in trade_control.place_market_order.await_args_list],
             ["BTCUSDC", "ETHUSDC"],

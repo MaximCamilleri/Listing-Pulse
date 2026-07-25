@@ -116,6 +116,39 @@ class FakeSdkClient:
         self.rest_api = FakeRestApi()
 
 
+class FakeStreamHandle:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def on(self, event, callback):
+        self.calls.append(("on", event, callback))
+
+    async def unsubscribe(self):
+        self.calls.append(("unsubscribe",))
+
+
+class FakeWebSocketStreams:
+    def __init__(self):
+        self.calls = []
+        self.handle = FakeStreamHandle(self.calls)
+
+    async def create_connection(self):
+        self.calls.append(("create_connection",))
+
+    async def all_market_tickers_streams(self):
+        self.calls.append(("subscribe_all_market_tickers",))
+        return self.handle
+
+    async def close_connection(self, close_session=True):
+        self.calls.append(("close_connection", close_session))
+
+
+class FakeStreamingSdkClient(FakeSdkClient):
+    def __init__(self):
+        super().__init__()
+        self.websocket_streams = FakeWebSocketStreams()
+
+
 class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         logging.disable(logging.CRITICAL)
@@ -146,6 +179,26 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
                     "reduce_only": False,
                     "new_order_resp_type": "RESULT",
                 }
+            ],
+        )
+
+    async def test_connects_before_subscribing_to_price_stream(self):
+        client = BinanceIntegration.__new__(BinanceIntegration)
+        client.client = FakeStreamingSdkClient()
+        client._price_stream_handle = None
+        callback = lambda message: None
+
+        await client.start_price_stream(callback)
+        await client.stop_price_stream()
+
+        self.assertEqual(
+            client.client.websocket_streams.calls,
+            [
+                ("create_connection",),
+                ("subscribe_all_market_tickers",),
+                ("on", "message", callback),
+                ("unsubscribe",),
+                ("close_connection", True),
             ],
         )
 
@@ -204,7 +257,7 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
         client = BinanceIntegration.__new__(BinanceIntegration)
         client.client = FakeSdkClient()
 
-        rules = await client.get_market_rules("SOONUSDT")
+        rules = (await client.get_market_rules("SOONUSDT"))["SOONUSDT"]
 
         self.assertEqual(rules.symbol, "SOONUSDT")
         self.assertEqual(rules.status, "TRADING")
@@ -217,8 +270,8 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
         client = BinanceIntegration.__new__(BinanceIntegration)
         client.client = FakeSdkClient()
 
-        price = await client.get_symbol_price("SOONUSDT")
-        brackets = await client.get_leverage_brackets("SOONUSDT")
+        price = (await client.get_symbol_price("SOONUSDT"))["SOONUSDT"]
+        brackets = (await client.get_leverage_brackets("SOONUSDT"))["SOONUSDT"]
 
         self.assertEqual(price, Decimal("0.50"))
         self.assertEqual(len(brackets), 1)
@@ -254,7 +307,7 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        brackets = await client.get_leverage_brackets("SOONUSDT")
+        brackets = (await client.get_leverage_brackets("SOONUSDT"))["SOONUSDT"]
 
         self.assertEqual(len(brackets), 1)
         self.assertEqual(brackets[0].initial_leverage, 50)
