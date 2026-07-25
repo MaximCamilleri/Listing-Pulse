@@ -149,7 +149,7 @@ class TelegramController:
                 # A malformed message or downstream failure should not terminate
                 # the controller. In production, send this to error monitoring.
                 logger.exception(
-                    "Business logic failed for Telegram message",
+                    "Message handler logic failed",
                     extra={
                         "channel_id": (
                             message.channel_id
