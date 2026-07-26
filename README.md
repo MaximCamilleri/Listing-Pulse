@@ -18,8 +18,10 @@ Create `.env` with the required Telegram credentials and runtime settings:
 TELEGRAM_SESSION=""
 TELEGRAM_API_ID=1
 TELEGRAM_API_HASH=""
-TELEGRAM_CHANNEL=""
+# Prefer Telethon's marked numeric ID for hosted workers.
+TELEGRAM_CHANNEL="-1002562064658"
 TELEGRAM_PHONE=""
+TELEGRAM_READINESS_MAX_WAIT_SECONDS=900
 
 TRADING_ENABLED=false
 TRADE_ENVIRONMENT=DEMO
@@ -46,7 +48,9 @@ For detailed latency instrumentation:
 python latency_monitor_main.py
 ```
 
-Logs are written to stdout and rotating files under `logs/`. The Telegram connection maintains `logs/heartbeat` for container health checks.
+Logs are written to stdout and rotating files under `logs/`. The Telegram supervisor maintains `logs/heartbeat` while the listener is ready or making bounded recovery progress. A connected listener may honor a Telegram flood wait for up to `TELEGRAM_READINESS_MAX_WAIT_SECONDS` before the heartbeat is allowed to become stale.
+
+Use a marked numeric Telegram channel ID in hosted environments when possible. Numeric filters avoid Telegram username-resolution requests during listener startup. Usernames and `t.me` URLs remain supported and are resolved once after authentication, before the event handler becomes ready.
 
 ## Tests
 

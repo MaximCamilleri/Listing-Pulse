@@ -4,9 +4,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
+import time
 from typing import TypeAlias
 from uuid import uuid4
 from telethon import TelegramClient, events, types, utils
+from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
 
 from src.config.settings import settings
@@ -32,13 +35,23 @@ class TelegramMessage:
     has_media: bool
     grouped_id: int | None
 
-@dataclass(frozen=True, slots=True)
+class TelegramListenerState(StrEnum):
+    DISCONNECTED = "DISCONNECTED"
+    CONNECTING = "CONNECTING"
+    RESOLVING_CHANNEL = "RESOLVING_CHANNEL"
+    READY = "READY"
+    WAITING_FOR_FLOOD_LIMIT = "WAITING_FOR_FLOOD_LIMIT"
+    STOPPING = "STOPPING"
+
+
+@dataclass(slots=True)
 class _Subscription:
     """
     Internal subscription information required to remove a Telethon handler.
     """
     callback: Callable
-    event_builder: events.NewMessage
+    channel: ChannelReference
+    event_builder: events.NewMessage | None = None
 
 MessageHandler: TypeAlias = Callable[[TelegramMessage], Awaitable[None]]
 
@@ -70,6 +83,7 @@ class TelegramIntegration:
         supervisor_initial_delay: float = 2.0,
         supervisor_max_delay: float = 60.0,
         healthcheck_interval_seconds: float = 15.0,
+        readiness_max_wait_seconds: float = 900.0,
     ) -> None:
         if api_id <= 0:
             raise ValueError("api_id must be a positive integer")
@@ -92,10 +106,14 @@ class TelegramIntegration:
         if healthcheck_interval_seconds <= 0:
             raise ValueError("healthcheck_interval_seconds must be positive")
 
+        if readiness_max_wait_seconds <= 0:
+            raise ValueError("readiness_max_wait_seconds must be positive")
+
         self._phone = phone
         self._supervisor_initial_delay = supervisor_initial_delay
         self._supervisor_max_delay = supervisor_max_delay
         self._healthcheck_interval_seconds = healthcheck_interval_seconds
+        self._readiness_max_wait_seconds = readiness_max_wait_seconds
 
         self._client = TelegramClient(
             session=StringSession(session_string.strip()),
@@ -112,6 +130,8 @@ class TelegramIntegration:
         self._subscriptions: dict[str, _Subscription] = {}
         self._stop_event = asyncio.Event()
         self._running = False
+        self._state = TelegramListenerState.DISCONNECTED
+        self._state_changed_at = time.monotonic()
 
     @property
     def is_connected(self) -> bool:
@@ -120,6 +140,10 @@ class TelegramIntegration:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def state(self) -> TelegramListenerState:
+        return self._state
 
     def subscribe_to_new_messages(
         self,
@@ -142,8 +166,6 @@ class TelegramIntegration:
 
         channel = _normalize_channel_reference(channel)
 
-        event_builder = events.NewMessage(chats=channel)
-
         async def telethon_callback(event: events.NewMessage.Event) -> None:
             try:
                 application_message = await self._convert_message(event)
@@ -162,21 +184,19 @@ class TelegramIntegration:
 
         subscription_id = uuid4().hex
 
-        self._client.add_event_handler(
-            telethon_callback,
-            event_builder,
-        )
-
         self._subscriptions[subscription_id] = _Subscription(
             callback=telethon_callback,
-            event_builder=event_builder,
+            channel=channel,
         )
 
         logger.info(
-            "Registered Telegram channel subscription",
+            "Configured Telegram channel subscription",
             extra={
                 "subscription_id": subscription_id,
                 "channel": channel,
+                "channel_reference_type": (
+                    "numeric" if isinstance(channel, int) else "username_or_url"
+                ),
             },
         )
 
@@ -194,10 +214,11 @@ class TelegramIntegration:
         if subscription is None:
             return False
 
-        self._client.remove_event_handler(
-            subscription.callback,
-            subscription.event_builder,
-        )
+        if subscription.event_builder is not None:
+            self._client.remove_event_handler(
+                subscription.callback,
+                subscription.event_builder,
+            )
 
         logger.info(
             "Removed Telegram channel subscription",
@@ -218,11 +239,44 @@ class TelegramIntegration:
         if self._client.is_connected():
             return
 
+        self._set_state(TelegramListenerState.CONNECTING)
         logger.info("Connecting to Telegram")
 
         await self._client.start(phone=self._phone)
 
         logger.info("Connected to Telegram")
+
+    async def _activate_subscriptions(self) -> None:
+        """Resolve configured channels and register handlers before readiness."""
+        for subscription_id, subscription in self._subscriptions.items():
+            if subscription.event_builder is not None:
+                continue
+
+            channel = subscription.channel
+            resolved_channel = channel
+            if isinstance(channel, str):
+                self._set_state(TelegramListenerState.RESOLVING_CHANNEL)
+                logger.info(
+                    "Resolving Telegram channel subscription",
+                    extra={"subscription_id": subscription_id},
+                )
+                resolved_channel = await self._client.get_input_entity(channel)
+
+            event_builder = events.NewMessage(chats=resolved_channel)
+            self._client.add_event_handler(
+                subscription.callback,
+                event_builder,
+            )
+            subscription.event_builder = event_builder
+            logger.info(
+                "Activated Telegram channel subscription",
+                extra={
+                    "subscription_id": subscription_id,
+                    "channel_reference_type": (
+                        "numeric" if isinstance(channel, int) else "resolved"
+                    ),
+                },
+            )
 
     async def run_forever(self) -> None:
         """
@@ -249,12 +303,15 @@ class TelegramIntegration:
             while not self._stop_event.is_set():
                 try:
                     await self.start()
+                    await self._activate_subscriptions()
+                    self._set_state(TelegramListenerState.READY)
                     record_health()
 
-                    # A successful connection resets the outer backoff.
+                    # Readiness, rather than a bare TCP connection, proves that
+                    # the listener can safely reset its recovery backoff.
                     reconnect_delay = self._supervisor_initial_delay
 
-                    logger.info("Telegram listener is running")
+                    logger.info("Telegram listener is ready")
 
                     await self._client.run_until_disconnected()
 
@@ -263,13 +320,49 @@ class TelegramIntegration:
                             "Telegram client disconnected unexpectedly"
                         )
 
+                except FloodWaitError as exc:
+                    if self._stop_event.is_set():
+                        break
+                    wait_seconds = max(float(exc.seconds), 0.0)
+                    operation = (
+                        "resolve_channel_subscription"
+                        if self._state
+                        is TelegramListenerState.RESOLVING_CHANNEL
+                        else "connect_or_authenticate"
+                    )
+                    self._set_state(
+                        TelegramListenerState.WAITING_FOR_FLOOD_LIMIT
+                    )
+                    logger.warning(
+                        "Telegram rate limit encountered during listener "
+                        "startup; waiting before retry",
+                        extra={
+                            "flood_wait_seconds": wait_seconds,
+                            "operation": operation,
+                        },
+                    )
+                    await self._wait_before_reconnect(wait_seconds)
+                    continue
+
                 except asyncio.CancelledError:
-                    raise
+                    current_task = asyncio.current_task()
+                    externally_cancelled = bool(
+                        current_task is not None and current_task.cancelling()
+                    )
+                    if self._stop_event.is_set() or externally_cancelled:
+                        raise
+                    self._set_state(TelegramListenerState.DISCONNECTED)
+                    logger.exception(
+                        "Telegram cancelled an in-flight operation "
+                        "unexpectedly; recovering",
+                        extra={"retry_delay_seconds": reconnect_delay},
+                    )
 
                 except Exception:
                     if self._stop_event.is_set():
                         break
 
+                    self._set_state(TelegramListenerState.DISCONNECTED)
                     logger.exception(
                         "Telegram connection failed; reconnecting",
                         extra={"retry_delay_seconds": reconnect_delay},
@@ -287,6 +380,7 @@ class TelegramIntegration:
 
         finally:
             self._running = False
+            self._set_state(TelegramListenerState.STOPPING)
             heartbeat_task.cancel()
 
             try:
@@ -297,6 +391,7 @@ class TelegramIntegration:
             if self._client.is_connected():
                 await self._client.disconnect()
 
+            self._set_state(TelegramListenerState.DISCONNECTED)
             logger.info("Telegram integration stopped")
 
     async def _run_health_heartbeat(self) -> None:
@@ -308,20 +403,24 @@ class TelegramIntegration:
             settings.healthcheck_file,
         )
 
-        last_connected: bool | None = None
+        last_health_eligible: bool | None = None
 
         while not self._stop_event.is_set():
             try:
                 connected = self._client.is_connected()
+                health_eligible = self._health_is_eligible(connected)
 
-                if connected != last_connected:
+                if health_eligible != last_health_eligible:
                     logger.info(
-                        "Telegram health connection state changed connected=%s",
+                        "Telegram health state changed connected=%s "
+                        "listener_state=%s health_eligible=%s",
                         connected,
+                        self._state,
+                        health_eligible,
                     )
-                    last_connected = connected
+                    last_health_eligible = health_eligible
 
-                if connected:
+                if health_eligible:
                     record_health()
                     logger.debug("Telegram health heartbeat refreshed")
 
@@ -336,6 +435,29 @@ class TelegramIntegration:
             except asyncio.TimeoutError:
                 pass
 
+    def _health_is_eligible(
+        self,
+        connected: bool,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        if not connected:
+            return False
+        if self._state is TelegramListenerState.READY:
+            return True
+        recoverable_not_ready = self._state in {
+            TelegramListenerState.CONNECTING,
+            TelegramListenerState.RESOLVING_CHANNEL,
+            TelegramListenerState.WAITING_FOR_FLOOD_LIMIT,
+        }
+        state_age = (
+            time.monotonic() if now is None else now
+        ) - self._state_changed_at
+        return (
+            recoverable_not_ready
+            and state_age <= self._readiness_max_wait_seconds
+        )
+
     async def stop(self) -> None:
         """
         Request shutdown and disconnect the client.
@@ -345,9 +467,24 @@ class TelegramIntegration:
         """
 
         self._stop_event.set()
+        self._set_state(TelegramListenerState.STOPPING)
 
         if self._client.is_connected():
             await self._client.disconnect()
+
+    def _set_state(self, state: TelegramListenerState) -> None:
+        if state is self._state:
+            return
+        previous = self._state
+        self._state = state
+        self._state_changed_at = time.monotonic()
+        logger.info(
+            "Telegram listener state changed",
+            extra={
+                "previous_state": previous,
+                "listener_state": state,
+            },
+        )
 
     async def _wait_before_reconnect(self, delay: float) -> None:
         """

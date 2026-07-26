@@ -116,6 +116,7 @@ async def start_trader(
         "supervisor_initial_delay" : settings.telegram_supervisor_initial_delay,
         "supervisor_max_delay" : settings.telegram_supervisor_max_delay,
         "healthcheck_interval_seconds" : settings.healthcheck_interval_seconds,
+        "readiness_max_wait_seconds" : settings.telegram_readiness_max_wait_seconds,
     }
 
     trigger_control = TelegramController(

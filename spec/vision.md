@@ -34,7 +34,9 @@ The end-to-end trade trigger filters Telegram messages for Upbit KRW listing ann
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 
-The hosted worker exposes Telegram listener health without adding a web server. While the Telegram client is connected, the responsive application event loop refreshes a local heartbeat. The container becomes unhealthy when that heartbeat is missing or stale, allowing ECS to replace a worker that remains alive but is disconnected or no longer making progress.
+The hosted worker exposes Telegram listener health without adding a web server. While the listener is ready or the connected supervisor is making bounded recovery progress, the responsive application event loop refreshes a local heartbeat. The container becomes unhealthy when that heartbeat is missing or stale, allowing ECS to replace a worker that remains alive but is disconnected or no longer making progress.
+
+Telegram listener startup resolves and activates its configured subscription before reporting readiness. Hosted workers should use a numeric channel ID to avoid repeated username-resolution requests. When Telegram imposes a temporary flood wait, the responsive supervisor honors that delay without reconnect churn and remains live for a bounded configurable period; readiness and degraded recovery remain visible in logs.
 
 The signal-to-trade workflow is modular. `TelegramIntegration` owns external Telegram connectivity, `TelegramController` owns subscription, buffering, and sequential message dispatch, and the interface layer injects the trade handler. `BinanceController` owns trade validation and order sequencing, while `BinanceIntegration` owns raw SDK calls.
 
