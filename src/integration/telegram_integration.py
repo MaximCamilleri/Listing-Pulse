@@ -450,12 +450,13 @@ class TelegramIntegration:
             TelegramListenerState.RESOLVING_CHANNEL,
             TelegramListenerState.WAITING_FOR_FLOOD_LIMIT,
         }
-        state_age = (
-            time.monotonic() if now is None else now
-        ) - self._state_changed_at
+        current_time = time.monotonic() if now is None else now
+        recovery_deadline = (
+            self._state_changed_at + self._readiness_max_wait_seconds
+        )
         return (
             recoverable_not_ready
-            and state_age <= self._readiness_max_wait_seconds
+            and current_time <= recovery_deadline
         )
 
     async def stop(self) -> None:
