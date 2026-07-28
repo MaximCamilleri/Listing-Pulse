@@ -1,4 +1,4 @@
-# Upbit Listing Trader
+# Listing Pulse
 
 A long-running Python worker that listens for Upbit KRW listing announcements from a configured Telegram channel and opens Binance USD-M Futures trades for the listed assets.
 
