@@ -46,7 +46,26 @@ See [`spec/latency_optimization.md`](spec/latency_optimization.md) for the measu
 
 ## Trading Safety
 
-Listing Pulse fails closed when prices or exchange metadata are missing, invalid, or stale. Trade size is configured as quote-asset notional and converted to a valid base quantity using the latest streamed price and Binance market filters.
+Listing Pulse fails closed when prices or exchange metadata are missing, invalid, or stale. Trade size is configured as a quote-asset initial-margin budget. The controller selects leverage that allows for the trailing callback, Binance maintenance margin, and the configured liquidation safety distance, then converts the resulting notional to a valid base quantity using the latest streamed price and Binance market filters.
+
+### Entry Size and Leverage
+
+For each symbol, the controller chooses the greatest whole-number leverage that is permitted by the applicable Binance notional bracket and satisfies the following conservative condition:
+
+```text
+1 / leverage > callback rate + liquidation safety rate + maintenance margin rate
+```
+
+Rates are expressed as fractions in this calculation. For example, a 5% callback, 1% safety allowance, and 1% maintenance margin require more than 7% adverse-move capacity. The highest qualifying leverage is 14x because `1 / 14 = 7.14%`, while `1 / 15 = 6.67%` does not qualify. Binance's advertised maximum leverage is only an upper limit; the controller may select less leverage to keep the estimated liquidation boundary beyond the trailing-stop callback and safety allowance.
+
+The configured margin budget and selected leverage determine the target entry notional:
+
+```text
+target notional = ORDER_MARGIN_AMOUNT * selected leverage
+raw quantity = target notional / current streamed price
+```
+
+With `ORDER_MARGIN_AMOUNT=200` and 14x leverage, the target notional is `2,800 USDT`. The raw base-asset quantity is rounded down to Binance's valid market-order step and checked against the symbol's quantity and minimum-notional filters. Rounding down means the actual notional and estimated initial margin can be slightly lower than their configured targets, but not higher.
 
 Additional safeguards include:
 
@@ -86,13 +105,16 @@ TELEGRAM_PHONE=""
 TRADING_ENABLED=false
 TRADE_ENVIRONMENT=DEMO
 ORDER_DIRECTION=BUY
-ORDER_QUOTE_AMOUNT=100
+ORDER_MARGIN_AMOUNT=100
 ORDER_CALLBACK_RATE=5
+ORDER_LIQUIDATION_SAFETY_RATE=1
 ORDER_QUOTE_ASSET=USDT
 
 BINANCE_API_KEY=""
 BINANCE_API_SECRET=""
 ```
+
+`ORDER_MARGIN_AMOUNT` replaces `ORDER_QUOTE_AMOUNT`. The legacy name is accepted temporarily as a compatibility alias, but new deployments should use the margin name.
 
 Keep `TRADING_ENABLED=false` and `TRADE_ENVIRONMENT=DEMO` unless live execution has been explicitly reviewed.
 

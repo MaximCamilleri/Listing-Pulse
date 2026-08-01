@@ -86,6 +86,7 @@ class FakeRestApi:
                             notional_floor=0,
                             notional_cap=50000,
                             initial_leverage=75,
+                            maint_margin_ratio=0.005,
                         )
                     ],
                 )
@@ -277,6 +278,7 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(brackets), 1)
         self.assertEqual(brackets[0].initial_leverage, 75)
         self.assertEqual(brackets[0].notional_cap, Decimal("50000"))
+        self.assertEqual(brackets[0].maintenance_margin_rate, Decimal("0.005"))
 
     async def test_selects_symbol_from_list_leverage_response(self):
         client = BinanceIntegration.__new__(BinanceIntegration)
@@ -288,6 +290,7 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
                     notional_floor=0,
                     notional_cap=50000,
                     initial_leverage=125,
+                    maint_margin_ratio=0.004,
                 )
             ],
         )
@@ -298,6 +301,7 @@ class BinanceClientTests(unittest.IsolatedAsyncioTestCase):
                     notional_floor=0,
                     notional_cap=10000,
                     initial_leverage=50,
+                    maint_margin_ratio=0.005,
                 )
             ],
         )

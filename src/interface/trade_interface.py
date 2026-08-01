@@ -98,7 +98,7 @@ async def start_trader(
 
     # Trade Setup
     trade_control = trade_control or BinanceController(
-        quote_amount=settings.order_quote_amount
+        margin_amount=settings.order_margin_amount
     )
     await trade_control.start()
 
