@@ -32,6 +32,7 @@ class BinanceLeverageBracket:
     notional_floor: Decimal
     notional_cap: Decimal
     initial_leverage: int
+    maintenance_margin_rate: Decimal
 
 
 class BinanceIntegration:
@@ -278,6 +279,9 @@ class BinanceIntegration:
                     notional_floor=Decimal(str(bracket.notional_floor)),
                     notional_cap=Decimal(str(bracket.notional_cap)),
                     initial_leverage=bracket.initial_leverage,
+                    maintenance_margin_rate=Decimal(
+                        str(bracket.maint_margin_ratio)
+                    ),
                 )
                 for bracket in item.brackets or []
             ]

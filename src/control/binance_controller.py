@@ -24,16 +24,16 @@ logger = get_logger(__name__)
 class BinanceController:
     def __init__(
         self,
-        quote_amount: Decimal | None = None,
+        margin_amount: Decimal | None = None,
         binance_client: BinanceIntegration | None = None,
         price_cache: BinancePriceCache | None = None,
     ) -> None:
         self.binance_client = binance_client or BinanceIntegration()
-        self.quote_amount = Decimal(
-            str(settings.order_quote_amount if quote_amount is None else quote_amount)
+        self.margin_amount = Decimal(
+            str(settings.order_margin_amount if margin_amount is None else margin_amount)
         )
-        if self.quote_amount <= 0:
-            raise ValueError("quote_amount must be positive")
+        if self.margin_amount <= 0:
+            raise ValueError("margin_amount must be positive")
 
         self.price_cache = price_cache or BinancePriceCache()
         self.market_rules: dict[str, BinanceMarketRules] = {}
@@ -129,19 +129,26 @@ class BinanceController:
             live_price = self.price_cache.require(
                 symbol, settings.binance_price_max_age_seconds
             )
-            quantity = self._calculate_quantity(rules, live_price.price)
-            notional = quantity * live_price.price
-            leverage = self._get_max_leverage(
-                symbol, self.leverage_brackets[symbol], notional
+            leverage, target_notional = self._calculate_order_size(
+                symbol, self.leverage_brackets[symbol], callback_rate
             )
+            quantity = self._calculate_quantity(
+                rules, live_price.price, target_notional
+            )
+            notional = quantity * live_price.price
+            initial_margin = notional / leverage
             await self._confirm_leverage(symbol, leverage)
 
             logger.info(
                 "Placing Binance market entry order symbol=%s direction=%s "
-                "quote_amount=%s price=%s quantity=%s leverage=%s callback_rate=%s",
+                "margin_amount=%s target_notional=%s actual_notional=%s "
+                "initial_margin=%s price=%s quantity=%s leverage=%s callback_rate=%s",
                 symbol,
                 direction,
-                self.quote_amount,
+                self.margin_amount,
+                target_notional,
+                notional,
+                initial_margin,
                 live_price.price,
                 quantity,
                 leverage,
@@ -224,10 +231,10 @@ class BinanceController:
         return rules
 
     def _calculate_quantity(
-        self, rules: BinanceMarketRules, price: Decimal
+        self, rules: BinanceMarketRules, price: Decimal, target_notional: Decimal
     ) -> Decimal:
         quantity = (
-            (self.quote_amount / price / rules.step_size).to_integral_value(
+            (target_notional / price / rules.step_size).to_integral_value(
                 rounding=ROUND_DOWN
             )
             * rules.step_size
@@ -244,28 +251,40 @@ class BinanceController:
             )
         return quantity
 
-    def _get_max_leverage(
+    def _calculate_order_size(
         self,
         symbol: str,
         leverage_brackets: list[BinanceLeverageBracket],
-        notional_value: Decimal,
-    ) -> int:
-        matching = next(
-            (
-                bracket
-                for bracket in sorted(
-                    leverage_brackets, key=lambda item: item.notional_floor
-                )
-                if bracket.notional_floor <= notional_value < bracket.notional_cap
-            ),
-            None,
-        )
-        if matching is None:
-            raise ValueError(
-                f"No Binance leverage bracket supports notional "
-                f"{notional_value} for {symbol}"
+        callback_rate: Decimal,
+    ) -> tuple[int, Decimal]:
+        callback_fraction = callback_rate / Decimal("100")
+        safety_fraction = settings.order_liquidation_safety_rate / Decimal("100")
+        candidates: list[tuple[int, Decimal]] = []
+        for leverage in range(1, max(b.initial_leverage for b in leverage_brackets) + 1):
+            notional = self.margin_amount * leverage
+            bracket = next(
+                (
+                    item
+                    for item in leverage_brackets
+                    if item.notional_floor <= notional < item.notional_cap
+                ),
+                None,
             )
-        return matching.initial_leverage
+            if bracket is None or leverage > bracket.initial_leverage:
+                continue
+            required_distance = (
+                callback_fraction
+                + safety_fraction
+                + bracket.maintenance_margin_rate
+            )
+            if Decimal("1") / leverage > required_distance:
+                candidates.append((leverage, notional))
+        if not candidates:
+            raise ValueError(
+                f"No safe Binance leverage supports margin={self.margin_amount} "
+                f"and callback_rate={callback_rate} for {symbol}"
+            )
+        return max(candidates, key=lambda item: item[0])
 
     async def _confirm_leverage(self, symbol: str, leverage: int) -> None:
         lock = self._leverage_locks.setdefault(symbol, asyncio.Lock())

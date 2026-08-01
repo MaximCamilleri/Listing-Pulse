@@ -67,7 +67,7 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
             callback_rate=settings.order_callback_rate,
         )
         binance_controller_class.assert_called_once_with(
-            quote_amount=settings.order_quote_amount
+            margin_amount=settings.order_margin_amount
         )
         binance.start.assert_awaited_once()
         binance.stop.assert_awaited_once()

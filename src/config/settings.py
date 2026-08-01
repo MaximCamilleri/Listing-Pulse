@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENVIRONMENT = Literal["DEMO", "PROD"]
@@ -45,8 +45,9 @@ class Settings(BaseSettings):
 
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")
-    order_quote_amount: Decimal = Field(default=Decimal("0"), ge=0, description="Target position notional denominated in the symbol's quote asset")
+    order_margin_amount: Decimal = Field(default=Decimal("0"), ge=0, validation_alias=AliasChoices("ORDER_MARGIN_AMOUNT", "ORDER_QUOTE_AMOUNT"), description="Maximum initial margin allocated to each position, denominated in the quote asset")
     order_callback_rate: Decimal = Field(default=Decimal(5), description=f"Trailing stop distance. 5 means 5% off price")
+    order_liquidation_safety_rate: Decimal = Field(default=Decimal("1"), ge=0, description="Additional percentage-point distance required between the trailing callback and estimated liquidation")
     order_quote_asset: str = Field(default="USDT", description="Quote asset appended to parsed notice symbols for Binance futures")
 
     # Binance

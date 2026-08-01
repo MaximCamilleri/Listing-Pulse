@@ -33,8 +33,9 @@ class FakeBinanceClient:
         }
         self.brackets = {
             "BTCUSDT": [
-                BinanceLeverageBracket(Decimal("0"), Decimal("50"), 125),
-                BinanceLeverageBracket(Decimal("50"), Decimal("1000"), 75),
+                BinanceLeverageBracket(Decimal("0"), Decimal("50"), 125, Decimal("0.004")),
+                BinanceLeverageBracket(Decimal("50"), Decimal("1000"), 75, Decimal("0.005")),
+                BinanceLeverageBracket(Decimal("1000"), Decimal("100000"), 20, Decimal("0.01")),
             ]
         }
         self.market_orders = []
@@ -97,12 +98,12 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(entry.order_id, 100)
         self.assertEqual(stop.algo_id, 101)
-        self.assertEqual(client.market_orders, [("BTCUSDT", "BUY", Decimal("1.5"))])
+        self.assertEqual(client.market_orders, [("BTCUSDT", "BUY", Decimal("49.5"))])
         self.assertEqual(
             client.trailing_stop_orders,
-            [("BTCUSDT", "SELL", Decimal("1.5"), Decimal("1"))],
+            [("BTCUSDT", "SELL", Decimal("49.5"), Decimal("1"))],
         )
-        self.assertEqual(client.leverage_changes, [("BTCUSDT", 125)])
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 33)])
 
     async def test_reuses_confirmed_leverage(self):
         controller, client, _ = await self.make_controller()
@@ -110,7 +111,7 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
         await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
         await controller.place_market_order("BTCUSDT", "SELL", Decimal("1"))
 
-        self.assertEqual(client.leverage_changes, [("BTCUSDT", 75)])
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 20)])
 
     async def test_stale_or_missing_price_fails_before_exchange_order(self):
         now = [10.0]
@@ -151,11 +152,11 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
         client.get_market_rules.assert_not_awaited()
 
     async def test_validates_status_minimum_quantity_and_notional(self):
-        controller, client, _ = await self.make_controller(Decimal("1"))
+        controller, client, _ = await self.make_controller(Decimal("0.01"))
         with self.assertRaises(ValueError):
             await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
 
-        controller.quote_amount = Decimal("100")
+        controller.margin_amount = Decimal("100")
         client.rules["BTCUSDT"] = BinanceMarketRules(
             symbol="BTCUSDT",
             status="BREAK",
@@ -210,7 +211,22 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
 
         await controller.place_market_order("BTCUSDT", "BUY", Decimal("1"))
 
-        self.assertEqual(client.leverage_changes, [("BTCUSDT", 75)])
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 20)])
+
+    async def test_margin_and_callback_determine_notional_and_safe_leverage(self):
+        controller, client, _ = await self.make_controller(Decimal("200"))
+        client.rules["BTCUSDT"] = BinanceMarketRules(
+            symbol="BTCUSDT", status="TRADING", step_size=Decimal("0.001"),
+            min_quantity=Decimal("0.001"), max_quantity=Decimal("1000"),
+            min_notional=Decimal("5"),
+        )
+        controller.market_rules = client.rules
+
+        await controller.place_market_order("BTCUSDT", "BUY", Decimal("5"))
+
+        # 1/14 is just over the 5% callback + 1% safety + 1% maintenance margin.
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 14)])
+        self.assertEqual(client.market_orders, [("BTCUSDT", "BUY", Decimal("140"))])
 
     async def test_maintenance_waits_for_trade_but_price_updates_continue(self):
         controller, client, cache = await self.make_controller()
