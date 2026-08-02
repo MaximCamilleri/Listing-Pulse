@@ -1,25 +1,109 @@
 from src.control.telegram_controller import TelegramController, TelegramMessage
 from src.control.binance_controller import BinanceController
+from src.control.message_parser import parse_upbit_telegram_notice
 from src.support.logger import get_logger
 from src.config.settings import settings
+from src.support.latency_profiler import LatencyProfiler
 import asyncio
 import threading
+from datetime import datetime, timezone
 
 logger = get_logger(__name__)
 
-async def start_trader(stop_event: threading.Event | None = None):
+
+async def _place_order_and_log_latency(
+    *,
+    message: TelegramMessage,
+    pair: str,
+    trade_control: BinanceController,
+    latency_profiler: LatencyProfiler | None = None,
+) -> None:
+    kwargs = {
+        "symbol": pair,
+        "direction": settings.order_direction,
+        "callback_rate": settings.order_callback_rate,
+    }
+    if latency_profiler is not None:
+        kwargs["latency_profiler"] = latency_profiler
+    result = await trade_control.place_market_order(**kwargs)
+    if result is None:
+        return
+
+    entry, _ = result
+    order_opened_at = datetime.fromtimestamp(
+        entry.update_time / 1_000,
+        tz=timezone.utc,
+    )
+    notice_placed_at = message.date
+    if notice_placed_at.tzinfo is None:
+        notice_placed_at = notice_placed_at.replace(tzinfo=timezone.utc)
+
+    latency_seconds = (order_opened_at - notice_placed_at).total_seconds()
+    logger.info(
+        "Opened order from Telegram notice "
+        "symbol=%s channel_id=%s message_id=%s latency_seconds=%.3f "
+        "notice_placed_at=%s order_opened_at=%s",
+        pair,
+        message.channel_id,
+        message.message_id,
+        latency_seconds,
+        notice_placed_at.isoformat(),
+        order_opened_at.isoformat(),
+    )
+
+
+async def _trigger_action(
+    message: TelegramMessage,
+    trade_control: BinanceController,
+    latency_profiler: LatencyProfiler | None = None,
+) -> None:
+    logger.info("Received new telegram message")
+    if latency_profiler is None:
+        target_assets = parse_upbit_telegram_notice(message)
+    else:
+        with latency_profiler.span("notice.parse_and_filter"):
+            target_assets = parse_upbit_telegram_notice(message)
+
+    if not target_assets:
+        logger.info("Skipping notice: No new KRW listings")
+        return
+
+    # Preserve notice order while preventing duplicate orders for one asset.
+    target_assets = list(dict.fromkeys(target_assets))
+    logger.info("New KRW listing for: %s", target_assets)
+
+    order_tasks = []
+    for asset in target_assets:
+        pair = asset + settings.order_quote_asset
+        logger.info("Placing trade on: %s", pair)
+
+        order_tasks.append(
+            _place_order_and_log_latency(
+                message=message,
+                pair=pair,
+                trade_control=trade_control,
+                latency_profiler=latency_profiler,
+            )
+        )
+
+    await asyncio.gather(*order_tasks)
+
+
+async def start_trader(
+    stop_event: threading.Event | None = None,
+    trade_control: BinanceController | None = None,
+    message_handler=None,
+):
     stop_event = stop_event or threading.Event()
 
     # Trade Setup
-    trade_control = BinanceController()
+    trade_control = trade_control or BinanceController(
+        margin_amount=settings.order_margin_amount
+    )
+    await trade_control.start()
 
-    async def _trigger_action(message:TelegramMessage):
-        await trade_control.place_market_order(
-            symbol = "BTCUSDT",
-            quantity = settings.order_quantity,
-            direction = settings.order_direction,
-            callback_rate = settings.order_callback_rate,
-        )
+    async def trigger_action(message: TelegramMessage) -> None:
+        await _trigger_action(message, trade_control)
 
     # Listener Setup
     telegram_kwargs = {
@@ -31,12 +115,14 @@ async def start_trader(stop_event: threading.Event | None = None):
         "telegram_retry_delay" : settings.telegram_retry_delay,
         "supervisor_initial_delay" : settings.telegram_supervisor_initial_delay,
         "supervisor_max_delay" : settings.telegram_supervisor_max_delay,
+        "healthcheck_interval_seconds" : settings.healthcheck_interval_seconds,
+        "readiness_max_wait_seconds" : settings.telegram_readiness_max_wait_seconds,
     }
 
     trigger_control = TelegramController(
         telegram_kwargs = telegram_kwargs, 
         channel = settings.telegram_channel,
-        message_handler = _trigger_action
+        message_handler = message_handler or trigger_action
     )
 
     controller_task = asyncio.create_task(
@@ -68,6 +154,7 @@ async def start_trader(stop_event: threading.Event | None = None):
         stop_event.set()
         shutdown_task.cancel()
         await trigger_control.stop()
+        await trade_control.stop()
 
 
 async def _wait_for_shutdown(stop_event: threading.Event) -> None:

@@ -2,6 +2,7 @@ import asyncio
 import threading
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from src.config.settings import settings
@@ -26,7 +27,7 @@ class WorkflowTelegramController:
                 channel_title="Listings",
                 message_id=456,
                 sender_id=None,
-                text="New listing",
+                text="[거래] 비트코인 (BTC) 신규 거래지원 안내 (KRW, BTC, USDT)",
                 date=datetime.now(timezone.utc),
                 has_media=False,
                 grouped_id=None,
@@ -46,17 +47,30 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
         binance_controller_class,
     ):
         binance = binance_controller_class.return_value
-        binance.place_market_order = AsyncMock()
+        binance.start = AsyncMock()
+        binance.stop = AsyncMock()
+        binance.place_market_order = AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    update_time=int(datetime.now(timezone.utc).timestamp() * 1_000)
+                ),
+                SimpleNamespace(),
+            )
+        )
         stop_event = threading.Event()
 
         await asyncio.wait_for(start_trader(stop_event), timeout=1)
 
         binance.place_market_order.assert_awaited_once_with(
             symbol="BTCUSDT",
-            quantity=settings.order_quantity,
             direction=settings.order_direction,
             callback_rate=settings.order_callback_rate,
         )
+        binance_controller_class.assert_called_once_with(
+            margin_amount=settings.order_margin_amount
+        )
+        binance.start.assert_awaited_once()
+        binance.stop.assert_awaited_once()
         self.assertEqual(
             WorkflowTelegramController.instance.channel,
             settings.telegram_channel,
