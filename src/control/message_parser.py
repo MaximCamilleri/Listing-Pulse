@@ -21,7 +21,9 @@ def parse_upbit_telegram_notice(message:TelegramMessage) -> list[str]:
             
         else:
             # KRW 마켓 디지털 자산 추가 = "Digital asset added to the KRW market"
-            addition_phrase = re.search(r"KRW\s*마켓\s*디지털\s*자산\s*추가", headline)
+            addition_phrase = re.search(
+                r"KRW\s*마켓\s*디지털\s*자산\s*추가\s*$", headline
+            )
             if not addition_phrase:
                 return []
             asset_section = headline[:addition_phrase.start()]
