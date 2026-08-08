@@ -30,7 +30,7 @@ The Binance controller supports USDT-margined futures on Binance testnet (`DEMO`
 
 Trading is guarded by `TRADING_ENABLED`, which defaults to false. When disabled, a received message reaches the trade handler but no Binance order request is made.
 
-The end-to-end trade trigger filters Telegram messages for Upbit KRW listing announcements, parses one or more listed asset symbols, removes duplicate symbols within a notice, and concurrently attempts the configured Binance futures trade for each unique asset using `ORDER_QUOTE_ASSET` as the quote asset. For every successfully opened order, the worker logs the elapsed time from the Telegram notice timestamp to Binance's entry-order update timestamp. Duplicate-message protection across separate Telegram messages or process restarts is not yet implemented.
+The end-to-end trade trigger filters Telegram messages for original Upbit KRW listing announcements, rejects follow-up notices with trailing update text, parses one or more listed asset symbols, removes duplicate symbols within a notice, and concurrently attempts the configured Binance futures trade for each unique asset using `ORDER_QUOTE_ASSET` as the quote asset. For every successfully opened order, the worker logs the elapsed time from the Telegram notice timestamp to Binance's entry-order update timestamp. Duplicate-message protection across separate original Telegram messages or process restarts is not yet implemented.
 
 The runtime has been prepared for hosted operation. It logs to stdout and to daily rotating local files retained for seven days by default, handles shutdown signals, can be packaged in a Docker container, and uses environment-driven configuration so AWS can inject runtime settings and secrets.
 

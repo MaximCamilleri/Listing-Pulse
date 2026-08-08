@@ -37,6 +37,29 @@ class MessageParserTests(unittest.TestCase):
 
         self.assertEqual(parse_upbit_telegram_notice(message), [])
 
+    def test_parses_krw_market_asset_addition(self):
+        message = make_message(
+            "[거래] 카미노파이낸스(KMNO) KRW 마켓 디지털 자산 추가"
+        )
+
+        self.assertEqual(parse_upbit_telegram_notice(message), ["KMNO"])
+
+    def test_rejects_krw_market_asset_addition_start_time_change(self):
+        message = make_message(
+            "[거래] 카미노파이낸스(KMNO) KRW 마켓 디지털 자산 추가 "
+            "(거래지원 개시 시점 변경 안내)"
+        )
+
+        self.assertEqual(parse_upbit_telegram_notice(message), [])
+
+    def test_rejects_krw_market_asset_addition_additional_change(self):
+        message = make_message(
+            "[거래] 카미노파이낸스(KMNO) KRW 마켓 디지털 자산 추가 "
+            "(거래지원 개시 시점 추가 변경 안내)"
+        )
+
+        self.assertEqual(parse_upbit_telegram_notice(message), [])
+
     def test_rejects_unrelated_message(self):
         self.assertEqual(parse_upbit_telegram_notice(make_message("New listing")), [])
 
