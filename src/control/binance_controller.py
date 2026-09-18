@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
 import time
 
@@ -19,6 +20,19 @@ from src.support.latency_profiler import LatencyProfiler
 from src.support.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedMarketOrder:
+    symbol: str
+    direction: str
+    callback_rate: Decimal
+    price: Decimal
+    quantity: Decimal
+    leverage: int
+    target_notional: Decimal
+    actual_notional: Decimal
+    initial_margin: Decimal
 
 
 class BinanceController:
@@ -51,6 +65,10 @@ class BinanceController:
         self._started = False
         logger.debug("BinanceController initialized")
 
+    # ====================
+    #  Env Maintenance
+    # ====================
+
     async def start(self) -> None:
         if self._started:
             return
@@ -63,7 +81,7 @@ class BinanceController:
             await self.binance_client.start_price_stream(self.price_cache.update_message)
             await self.maintain_trading_env()
             self._maintenance_task = asyncio.create_task(
-                self._create(), name="binance-environment-maintenance"
+                self._create_maintenance_loop(), name="binance-environment-maintenance"
             )
         except BaseException:
             self._started = False
@@ -81,7 +99,7 @@ class BinanceController:
             await asyncio.gather(task, return_exceptions=True)
         await self.binance_client.stop_price_stream()
 
-    async def _create(self) -> None:
+    async def _create_maintenance_loop(self) -> None:
         """Periodically refresh pre-trade metadata without competing with trades."""
         while not self._stop_event.is_set():
             try:
@@ -96,102 +114,6 @@ class BinanceController:
                     logger.exception(
                         "Periodic Binance trading-environment refresh failed"
                     )
-
-    async def place_market_order(
-        self,
-        symbol: str,
-        direction: str,
-        callback_rate: Decimal,
-        latency_profiler: LatencyProfiler | None = None,
-    ) -> tuple[NewOrderResponse, NewAlgoOrderResponse] | None:
-        if not settings.trading_enabled:
-            logger.error(
-                "Failed to place trade on symbol=%s because trading is disabled",
-                symbol,
-            )
-            return None
-
-        symbol = symbol.upper().strip()
-        if not symbol:
-            raise ValueError("symbol must not be empty.")
-        direction = direction.upper().strip()
-        if direction not in {"BUY", "SELL"}:
-            raise ValueError(
-                f'Direction must be "BUY" or "SELL". "{direction}" is not supported.'
-            )
-        callback_rate = Decimal(str(callback_rate))
-        if not Decimal("0.1") <= callback_rate <= Decimal("10"):
-            raise ValueError("callback_rate must be between 0.1 and 10 percent.")
-
-        await self._ensure_symbol_metadata(symbol)
-        async with self._trade_access():
-            rules = self._require_rules(symbol)
-            live_price = self.price_cache.require(
-                symbol, settings.binance_price_max_age_seconds
-            )
-            leverage, target_notional = self._calculate_order_size(
-                symbol, self.leverage_brackets[symbol], callback_rate
-            )
-            quantity = self._calculate_quantity(
-                rules, live_price.price, target_notional
-            )
-            notional = quantity * live_price.price
-            initial_margin = notional / leverage
-            await self._confirm_leverage(symbol, leverage)
-
-            logger.info(
-                "Placing Binance market entry order symbol=%s direction=%s "
-                "margin_amount=%s target_notional=%s actual_notional=%s "
-                "initial_margin=%s price=%s quantity=%s leverage=%s callback_rate=%s",
-                symbol,
-                direction,
-                self.margin_amount,
-                target_notional,
-                notional,
-                initial_margin,
-                live_price.price,
-                quantity,
-                leverage,
-                callback_rate,
-            )
-            if latency_profiler is None:
-                try:
-                    entry = await self.binance_client.place_market_order(
-                        symbol=symbol, side=direction, quantity=quantity
-                    )
-                except Exception:
-                    self._invalidate_leverage(symbol)
-                    raise
-            else:
-                with latency_profiler.span(f"{symbol}.binance.market_entry"):
-                    try:
-                        entry = await self.binance_client.place_market_order(
-                            symbol=symbol, side=direction, quantity=quantity
-                        )
-                    except Exception:
-                        self._invalidate_leverage(symbol)
-                        raise
-
-            executed_quantity = Decimal(str(entry.executed_qty))
-            if executed_quantity <= 0:
-                raise RuntimeError(f"Entry was not filled: {entry}")
-            stop_side = "SELL" if direction == "BUY" else "BUY"
-            if latency_profiler is None:
-                trailing_stop = await self.binance_client.place_trailing_stop_order(
-                    symbol=symbol,
-                    side=stop_side,
-                    quantity=executed_quantity,
-                    callback_rate=callback_rate,
-                )
-            else:
-                with latency_profiler.span(f"{symbol}.binance.trailing_stop"):
-                    trailing_stop = await self.binance_client.place_trailing_stop_order(
-                        symbol=symbol,
-                        side=stop_side,
-                        quantity=executed_quantity,
-                        callback_rate=callback_rate,
-                    )
-            return entry, trailing_stop
 
     async def maintain_trading_env(self) -> None:
         async with self._maintenance_access():
@@ -210,17 +132,205 @@ class BinanceController:
                 len(brackets),
             )
 
-    async def _ensure_symbol_metadata(self, symbol: str) -> None:
-        fresh = (
-            self._metadata_refreshed_at is not None
-            and time.monotonic() - self._metadata_refreshed_at
-            <= settings.binance_env_max_age_seconds
+    # ====================
+    #  Trading
+    # ====================
+
+    async def place_volume_exit_order(
+            self, 
+            symbol: str
+    ): 
+        ...
+
+    async def place_market_order(
+            self,
+            symbol: str,
+            direction: str,
+            callback_rate: Decimal,
+            latency_profiler: LatencyProfiler | None = None,
+        ) -> tuple[NewOrderResponse, NewAlgoOrderResponse] | None:
+            if not settings.trading_enabled:
+                logger.error(
+                    "Failed to place trade on symbol=%s because trading is disabled",
+                    symbol,
+                )
+                return None
+    
+            symbol, direction, callback_rate = self._validate_trade_request(
+                symbol, direction, callback_rate
+            )
+            await self._ensure_symbol_metadata(symbol)
+            async with self._trade_access():
+                order = await self._prepare_market_order(
+                    symbol, direction, callback_rate
+                )
+    
+                logger.info(
+                    "Placing Binance market entry order symbol=%s direction=%s "
+                    "margin_amount=%s target_notional=%s actual_notional=%s "
+                    "initial_margin=%s price=%s quantity=%s leverage=%s callback_rate=%s",
+                    order.symbol,
+                    order.direction,
+                    self.margin_amount,
+                    order.target_notional,
+                    order.actual_notional,
+                    order.initial_margin,
+                    order.price,
+                    order.quantity,
+                    order.leverage,
+                    order.callback_rate,
+                )
+                if latency_profiler is None:
+                    try:
+                        entry = await self.binance_client.place_market_order(
+                            symbol=order.symbol,
+                            side=order.direction,
+                            quantity=order.quantity,
+                        )
+                    except Exception:
+                        self._invalidate_leverage(order.symbol)
+                        raise
+                else:
+                    with latency_profiler.span(f"{order.symbol}.binance.market_entry"):
+                        try:
+                            entry = await self.binance_client.place_market_order(
+                                symbol=order.symbol,
+                                side=order.direction,
+                                quantity=order.quantity,
+                            )
+                        except Exception:
+                            self._invalidate_leverage(order.symbol)
+                            raise
+    
+                executed_quantity = Decimal(str(entry.executed_qty))
+                if executed_quantity <= 0:
+                    raise RuntimeError(f"Entry was not filled: {entry}")
+                stop_side = "SELL" if order.direction == "BUY" else "BUY"
+                if latency_profiler is None:
+                    trailing_stop = await self.binance_client.place_trailing_stop_order(
+                        symbol=order.symbol,
+                        side=stop_side,
+                        quantity=executed_quantity,
+                        callback_rate=order.callback_rate,
+                    )
+                else:
+                    with latency_profiler.span(f"{order.symbol}.binance.trailing_stop"):
+                        trailing_stop = await self.binance_client.place_trailing_stop_order(
+                            symbol=order.symbol,
+                            side=stop_side,
+                            quantity=executed_quantity,
+                            callback_rate=order.callback_rate,
+                        )
+                return entry, trailing_stop
+
+    # Helpers
+    async def _prepare_market_order(
+        self,
+        symbol: str,
+        direction: str,
+        callback_rate: Decimal,
+    ) -> PreparedMarketOrder:
+        """Prepare and confirm the shared inputs required by an entry strategy."""
+        rules = self._require_rules(symbol)
+        live_price = self.price_cache.require(
+            symbol, settings.binance_price_max_age_seconds
         )
-        if fresh and symbol in self.market_rules and symbol in self.leverage_brackets:
-            return
-        await self.maintain_trading_env()
-        if symbol not in self.market_rules or symbol not in self.leverage_brackets:
-            raise ValueError(f"Binance futures symbol is unavailable: {symbol}")
+        leverage, target_notional = self._calculate_order_size(
+            symbol, self.leverage_brackets[symbol], callback_rate
+        )
+        quantity = self._calculate_quantity(rules, live_price.price, target_notional)
+        actual_notional = quantity * live_price.price
+        await self._confirm_leverage(symbol, leverage)
+        return PreparedMarketOrder(
+            symbol=symbol,
+            direction=direction,
+            callback_rate=callback_rate,
+            price=live_price.price,
+            quantity=quantity,
+            leverage=leverage,
+            target_notional=target_notional,
+            actual_notional=actual_notional,
+            initial_margin=actual_notional / leverage,
+        )
+
+    @staticmethod
+    def _validate_trade_request(
+        symbol: str,
+        direction: str,
+        callback_rate: Decimal,
+    ) -> tuple[str, str, Decimal]:
+        symbol = symbol.upper().strip()
+        if not symbol:
+            raise ValueError("symbol must not be empty.")
+        direction = direction.upper().strip()
+        if direction not in {"BUY", "SELL"}:
+            raise ValueError(
+                f'Direction must be "BUY" or "SELL". "{direction}" is not supported.'
+            )
+        callback_rate = Decimal(str(callback_rate))
+        if not Decimal("0.1") <= callback_rate <= Decimal("10"):
+            raise ValueError("callback_rate must be between 0.1 and 10 percent.")
+        return symbol, direction, callback_rate
+
+    def _calculate_quantity(
+            self, rules: BinanceMarketRules, price: Decimal, target_notional: Decimal
+        ) -> Decimal:
+            quantity = (
+                (target_notional / price / rules.step_size).to_integral_value(
+                    rounding=ROUND_DOWN
+                )
+                * rules.step_size
+            )
+            if quantity < rules.min_quantity:
+                raise ValueError(
+                    f"Calculated quantity is below the minimum for {rules.symbol}"
+                )
+            if quantity > rules.max_quantity:
+                quantity = rules.max_quantity
+            if quantity * price < rules.min_notional:
+                raise ValueError(
+                    f"Calculated notional is below the minimum for {rules.symbol}"
+                )
+            return quantity
+    
+    def _calculate_order_size(
+                self,
+                symbol: str,
+                leverage_brackets: list[BinanceLeverageBracket],
+                callback_rate: Decimal,
+            ) -> tuple[int, Decimal]:
+                callback_fraction = callback_rate / Decimal("100")
+                safety_fraction = settings.order_liquidation_safety_rate / Decimal("100")
+                candidates: list[tuple[int, Decimal]] = []
+                for leverage in range(1, max(b.initial_leverage for b in leverage_brackets) + 1):
+                    notional = self.margin_amount * leverage
+                    bracket = next(
+                        (
+                            item
+                            for item in leverage_brackets
+                            if item.notional_floor <= notional < item.notional_cap
+                        ),
+                        None,
+                    )
+                    if bracket is None or leverage > bracket.initial_leverage:
+                        continue
+                    required_distance = (
+                        callback_fraction
+                        + safety_fraction
+                        + bracket.maintenance_margin_rate
+                    )
+                    if Decimal("1") / leverage > required_distance:
+                        candidates.append((leverage, notional))
+                if not candidates:
+                    raise ValueError(
+                        f"No safe Binance leverage supports margin={self.margin_amount} "
+                        f"and callback_rate={callback_rate} for {symbol}"
+                    )
+                return max(candidates, key=lambda item: item[0])
+
+    def _invalidate_leverage(self, symbol: str) -> None:
+            self.confirmed_leverage.pop(symbol, None)
+            self._leverage_confirmed_at.pop(symbol, None)
 
     def _require_rules(self, symbol: str) -> BinanceMarketRules:
         rules = self.market_rules[symbol]
@@ -229,62 +339,6 @@ class BinanceController:
         if rules.step_size <= 0:
             raise ValueError(f"Binance returned invalid step size for {symbol}")
         return rules
-
-    def _calculate_quantity(
-        self, rules: BinanceMarketRules, price: Decimal, target_notional: Decimal
-    ) -> Decimal:
-        quantity = (
-            (target_notional / price / rules.step_size).to_integral_value(
-                rounding=ROUND_DOWN
-            )
-            * rules.step_size
-        )
-        if quantity < rules.min_quantity:
-            raise ValueError(
-                f"Calculated quantity is below the minimum for {rules.symbol}"
-            )
-        if quantity > rules.max_quantity:
-            quantity = rules.max_quantity
-        if quantity * price < rules.min_notional:
-            raise ValueError(
-                f"Calculated notional is below the minimum for {rules.symbol}"
-            )
-        return quantity
-
-    def _calculate_order_size(
-        self,
-        symbol: str,
-        leverage_brackets: list[BinanceLeverageBracket],
-        callback_rate: Decimal,
-    ) -> tuple[int, Decimal]:
-        callback_fraction = callback_rate / Decimal("100")
-        safety_fraction = settings.order_liquidation_safety_rate / Decimal("100")
-        candidates: list[tuple[int, Decimal]] = []
-        for leverage in range(1, max(b.initial_leverage for b in leverage_brackets) + 1):
-            notional = self.margin_amount * leverage
-            bracket = next(
-                (
-                    item
-                    for item in leverage_brackets
-                    if item.notional_floor <= notional < item.notional_cap
-                ),
-                None,
-            )
-            if bracket is None or leverage > bracket.initial_leverage:
-                continue
-            required_distance = (
-                callback_fraction
-                + safety_fraction
-                + bracket.maintenance_margin_rate
-            )
-            if Decimal("1") / leverage > required_distance:
-                candidates.append((leverage, notional))
-        if not candidates:
-            raise ValueError(
-                f"No safe Binance leverage supports margin={self.margin_amount} "
-                f"and callback_rate={callback_rate} for {symbol}"
-            )
-        return max(candidates, key=lambda item: item[0])
 
     async def _confirm_leverage(self, symbol: str, leverage: int) -> None:
         lock = self._leverage_locks.setdefault(symbol, asyncio.Lock())
@@ -304,10 +358,18 @@ class BinanceController:
             self.confirmed_leverage[symbol] = leverage
             self._leverage_confirmed_at[symbol] = time.monotonic()
 
-    def _invalidate_leverage(self, symbol: str) -> None:
-        self.confirmed_leverage.pop(symbol, None)
-        self._leverage_confirmed_at.pop(symbol, None)
-
+    async def _ensure_symbol_metadata(self, symbol: str) -> None:
+        fresh = (
+            self._metadata_refreshed_at is not None
+            and time.monotonic() - self._metadata_refreshed_at
+            <= settings.binance_env_max_age_seconds
+        )
+        if fresh and symbol in self.market_rules and symbol in self.leverage_brackets:
+            return
+        await self.maintain_trading_env()
+        if symbol not in self.market_rules or symbol not in self.leverage_brackets:
+            raise ValueError(f"Binance futures symbol is unavailable: {symbol}")
+            
     @asynccontextmanager
     async def _trade_access(self):
         async with self._condition:
