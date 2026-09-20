@@ -8,12 +8,11 @@ from research.util.binance_tick_feed import (
     BinanceTickFeed,
     REST_WINDOW_MS,
 )
-from research.util.trailing_stop import (
+from research.util.exit_strategy import (
     calculate_trailing_stop_pnl,
-    normalize_symbol,
     simulate_trailing_stop,
-    timestamp_to_ms,
 )
+from research.util.helper import normalize_symbol, timestamp_to_ms
 
 
 class FakeTickFeed:
