@@ -20,12 +20,19 @@ def parse_upbit_telegram_notice(message:TelegramMessage) -> list[str]:
                 return []
             
         else:
-            # KRW 마켓 디지털 자산 추가 = "Digital asset added to the KRW market"
+            # Match the market list separately from the addition phrase so notices
+            # such as "KRW, USDT 마켓 디지털 자산 추가" are also accepted.
             addition_phrase = re.search(
-                r"KRW\s*마켓\s*디지털\s*자산\s*추가\s*$", headline
+                r"마켓\s*디지털\s*자산\s*추가\s*$", headline
             )
             if not addition_phrase:
                 return []
+
+            market_section = headline[:addition_phrase.start()]
+            markets = set(re.findall(r"\b[A-Z]{2,10}\b", market_section))
+            if "KRW" not in markets:
+                return []
+
             asset_section = headline[:addition_phrase.start()]
 
         # 거래 = "Trading"

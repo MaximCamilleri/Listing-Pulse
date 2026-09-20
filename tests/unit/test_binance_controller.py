@@ -105,6 +105,21 @@ class BinanceControllerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(client.leverage_changes, [("BTCUSDT", 33)])
 
+    async def test_prepares_shared_trade_values_without_executing_orders(self):
+        controller, client, _ = await self.make_controller(Decimal("30"))
+
+        order = await controller._prepare_market_order(
+            "BTCUSDT", "BUY", Decimal("1")
+        )
+
+        self.assertEqual(order.quantity, Decimal("49.5"))
+        self.assertEqual(order.leverage, 33)
+        self.assertEqual(order.target_notional, Decimal("990"))
+        self.assertEqual(order.actual_notional, Decimal("990.0"))
+        self.assertEqual(client.leverage_changes, [("BTCUSDT", 33)])
+        self.assertEqual(client.market_orders, [])
+        self.assertEqual(client.trailing_stop_orders, [])
+
     async def test_reuses_confirmed_leverage(self):
         controller, client, _ = await self.make_controller()
 
