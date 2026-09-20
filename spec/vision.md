@@ -14,6 +14,8 @@ The project is being built as a long-running worker rather than a web API. The c
 
 The preferred AWS direction is a single-container ECS Fargate service. ECS provides a clean start/stop model through desired count, sends logs to CloudWatch, and avoids managing a server directly. A small Lightsail instance remains the cheapest possible option, but it carries more operational responsibility.
 
+The worker's published container images target ARM64 for hosting on AWS Graviton. Builds and automated tests run on ARM64 to match the deployment architecture. Hosting decisions are recorded in [hosting.md](hosting.md).
+
 Strategy parameters will be evaluated offline in a dedicated research workspace. Historical Binance Futures trade data will be replayed to compare entry latency and trailing-stop behavior before those findings are considered for production trading changes.
 
 Signal-to-trade latency will be optimized according to `spec/latency_optimization.md`. The current measured DEMO path is dominated by serial Binance metadata and configuration requests rather than parsing. The worker maintains a live Binance futures market-price stream, caches bounded-lifetime market rules and leverage brackets, avoids only confirmed redundant leverage changes, and calculates quote-notional quantity locally immediately before entry. Missing or stale streamed prices fail closed.

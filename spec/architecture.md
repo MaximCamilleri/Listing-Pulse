@@ -30,6 +30,8 @@ Runtime configuration must flow through `src.config.settings.settings`, backed b
 
 ## Runtime and Hosting
 
+Published container images target Linux ARM64 (`linux/arm64`). GitHub Actions builds images and runs tests on native ARM64 runners. ECS task definitions must use `ARM64` with `LINUX`. The hosting decision and deployment requirements are recorded in [hosting.md](hosting.md).
+
 The application is deployed as a long-running worker process. The runtime entry point remains `main.py`, which configures logging, installs shutdown signal handlers, and starts `ScraperService`. Hosted environments should stop the worker by sending `SIGTERM` or, on ECS, by scaling the service desired count to zero.
 
 `main.py` is responsible for composing runtime workflows from `src/interface/`. Scraper startup should inject the new-notice handler into `ScraperService`; `ScraperService` should only detect and publish new notices through that handler, not decide whether Binance or another downstream action should run.
