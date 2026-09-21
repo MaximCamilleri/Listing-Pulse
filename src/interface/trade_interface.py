@@ -38,10 +38,12 @@ async def start_trader(
 
     workflows: list[EventToTrade] = []
     trade_controls: dict[TRADE_CHANNELS, BinanceController] = {}
+    telegram = None
     for event, trade in pairs:
-        workflow = EventToTrade(event, trade, trade_control=trade_controls.get(trade))
+        workflow = EventToTrade(event, trade, trade_control=trade_controls.get(trade), telegram=telegram)
         workflows.append(workflow)
         trade_controls[trade] = workflow.trade_control
+        telegram = workflow.event_control.telegram
     await run_workflows(workflows, stop_event)
 
 
@@ -54,6 +56,7 @@ async def run_workflows(
         raise ValueError("At least one workflow is required")
     stop_event = stop_event if stop_event is not None else threading.Event()
     trade_controls = {id(workflow.trade_control): workflow.trade_control for workflow in workflows}
+    transports = {id(workflow.event_control.telegram): workflow.event_control.telegram for workflow in workflows}
     listener_tasks: list[asyncio.Task[None]] = []
     shutdown_task = None
     failed = False
@@ -61,9 +64,11 @@ async def run_workflows(
         for controller in trade_controls.values():
             await controller.start()
         for workflow in workflows:
+            await workflow.event_control.start()
+        # All subscriptions must exist before readiness and update dispatch begin.
+        for index, transport in enumerate(transports.values()):
             listener_tasks.append(asyncio.create_task(
-                workflow.event_control.run(),
-                name=f"{workflow.event_source.lower()}-{workflow.trade_source.lower()}-listener",
+                transport.run_forever(), name=f"telegram-connection-{index}",
             ))
         shutdown_task = asyncio.create_task(
             _wait_for_shutdown(stop_event), name="shutdown-waiter"
@@ -84,9 +89,9 @@ async def run_workflows(
         stop_event.set()
         if shutdown_task is not None:
             shutdown_task.cancel()
-        # Drain every listener before closing the shared trading controllers.
+        # Stop incoming updates once, then drain every queue before closing Binance.
         results = await asyncio.gather(
-            *(workflow.event_control.stop() for workflow in workflows),
+            *(transport.stop() for transport in transports.values()),
             return_exceptions=True,
         )
         tasks = [*listener_tasks]
@@ -96,6 +101,10 @@ async def run_workflows(
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        results.extend(await asyncio.gather(
+            *(workflow.event_control.stop() for workflow in workflows),
+            return_exceptions=True,
+        ))
         results.extend(await asyncio.gather(
             *(controller.stop() for controller in trade_controls.values()),
             return_exceptions=True,

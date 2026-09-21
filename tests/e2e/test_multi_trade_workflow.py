@@ -20,13 +20,17 @@ class MultiTradeWorkflowTests(unittest.IsolatedAsyncioTestCase):
         }
 
         class Listener:
-            def __init__(self, *, telegram_kwargs, channel, message_handler):
+            def __init__(self, *, telegram_kwargs, channel, message_handler, telegram=None):
+                self.telegram = self
                 self.channel = channel
                 self.handler = message_handler
                 self.stopped = asyncio.Event()
                 listeners.append(self)
 
-            async def run(self):
+            async def start(self):
+                pass
+
+            async def run_forever(self):
                 await self.handler(TelegramMessage(
                     channel_id=123, channel_title=self.channel, message_id=456,
                     sender_id=None, text=notices[self.channel],

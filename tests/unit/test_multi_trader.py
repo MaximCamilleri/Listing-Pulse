@@ -24,7 +24,7 @@ class MultiTraderTests(unittest.IsolatedAsyncioTestCase):
 
         self.trader.stop.side_effect = stop_trader
 
-    def compose(self, event, trade, *, trade_control):
+    def compose(self, event, trade, *, trade_control, telegram):
         listener = AsyncMock()
         stopped = asyncio.Event()
 
@@ -39,7 +39,7 @@ class MultiTraderTests(unittest.IsolatedAsyncioTestCase):
             self.stopped.add(event)
             stopped.set()
 
-        listener.run.side_effect = run
+        listener.telegram.run_forever.side_effect = run
         listener.stop.side_effect = stop
         self.listeners.append(listener)
         return SimpleNamespace(
@@ -70,7 +70,7 @@ class MultiTraderTests(unittest.IsolatedAsyncioTestCase):
                 async def fail():
                     await asyncio.sleep(0)
                     raise RuntimeError("listener failed")
-                workflow.event_control.run.side_effect = fail
+                workflow.event_control.telegram.run_forever.side_effect = fail
             return workflow
 
         with patch("src.interface.trade_interface.EventToTrade", side_effect=compose):
@@ -99,14 +99,14 @@ class MultiTraderTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(RuntimeError, "startup failed"):
                     await start_trader(combinations=PAIRS)
         for listener in self.listeners:
-            listener.run.assert_not_awaited()
+            listener.telegram.run_forever.assert_not_awaited()
         self.trader.stop.assert_awaited_once()
 
     async def test_cleanup_failure_still_stops_other_listener_and_trader(self):
         def compose(*args, **kwargs):
             workflow = self.compose(*args, **kwargs)
             if workflow.event_source == "UPBIT":
-                workflow.event_control.run.side_effect = None
+                workflow.event_control.telegram.run_forever.side_effect = None
                 async def fail_stop():
                     self.stopped.add("UPBIT")
                     raise RuntimeError("stop failed")

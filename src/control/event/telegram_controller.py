@@ -28,11 +28,12 @@ class TelegramController:
         channel: ChannelReference,
         message_handler: MessageHandler,
         queue_size: int = 1_000,
+        telegram: TelegramIntegration | None = None,
     ) -> None:
         if queue_size <= 0:
             raise ValueError("queue_size must be positive")
 
-        self._telegram = TelegramIntegration(**telegram_kwargs)
+        self._telegram = telegram if telegram is not None else TelegramIntegration(**telegram_kwargs)
         self._channel = channel
         self._message_handler = message_handler
 
@@ -47,10 +48,12 @@ class TelegramController:
         self._running = False
         self._stop_lock = asyncio.Lock()
 
-    async def run(self) -> None:
-        """
-        Start the controller and block until it is stopped.
-        """
+    @property
+    def telegram(self) -> TelegramIntegration:
+        return self._telegram
+
+    async def start(self) -> None:
+        """Register this channel and start its queue before connecting Telegram."""
 
         if self._running:
             raise RuntimeError("TelegramChannelController is already running")
@@ -69,18 +72,12 @@ class TelegramController:
         )
 
         logger.info(
-            "Telegram channel controller started",
-            extra={"channel": self._channel},
+            "Telegram channel controller started channel=%s", self._channel,
         )
-
-        try:
-            await self._telegram.run_forever()
-        finally:
-            await self.stop()
 
     async def stop(self) -> None:
         """
-        Stop receiving messages, disconnect Telegram, and drain queued work.
+        Unsubscribe this channel and drain queued work without closing Telegram.
         """
 
         worker_task: asyncio.Task[None] | None = None
@@ -94,8 +91,6 @@ class TelegramController:
             if self._subscription_id is not None:
                 self._telegram.unsubscribe(self._subscription_id)
                 self._subscription_id = None
-
-            await self._telegram.stop()
 
             if self._worker_task is not None:
                 # None is a sentinel placed after existing queued messages.
@@ -111,8 +106,7 @@ class TelegramController:
             await worker_task
 
         logger.info(
-            "Telegram channel controller stopped",
-            extra={"channel": self._channel},
+            "Telegram channel controller stopped channel=%s", self._channel,
         )
 
     async def _receive_message(self, message: TelegramMessage) -> None:

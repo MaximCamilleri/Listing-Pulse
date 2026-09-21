@@ -86,7 +86,7 @@ class TraderLifecycleTests(unittest.IsolatedAsyncioTestCase):
             workflow = compose.return_value
             workflow.trade_control = AsyncMock()
             workflow.event_control = AsyncMock()
-            workflow.event_control.run.side_effect = run_listener
+            workflow.event_control.telegram.run_forever.side_effect = run_listener
             workflow.event_control.stop.side_effect = stop_listener
             workflow.trade_control.stop.side_effect = lambda: events.append("trader-stop")
             await asyncio.wait_for(start_trader(stop_event), timeout=1)
@@ -103,5 +103,5 @@ class TraderLifecycleTests(unittest.IsolatedAsyncioTestCase):
             with self.assertLogs("src.interface.trade_interface", level="ERROR"):
                 with self.assertRaisesRegex(RuntimeError, "startup failed"):
                     await start_trader()
-            workflow.event_control.run.assert_not_awaited()
+            workflow.event_control.telegram.run_forever.assert_not_awaited()
             workflow.trade_control.stop.assert_awaited_once()

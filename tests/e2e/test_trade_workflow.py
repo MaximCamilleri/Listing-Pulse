@@ -13,14 +13,18 @@ from src.interface.trade_interface import start_trader
 class WorkflowTelegramController:
     instance = None
 
-    def __init__(self, *, telegram_kwargs, channel, message_handler):
+    def __init__(self, *, telegram_kwargs, channel, message_handler, telegram=None):
         type(self).instance = self
+        self.telegram = self
         self.telegram_kwargs = telegram_kwargs
         self.channel = channel
         self.message_handler = message_handler
         self.stopped = asyncio.Event()
 
-    async def run(self):
+    async def start(self):
+        pass
+
+    async def run_forever(self):
         await self.message_handler(
             TelegramMessage(
                 channel_id=123,

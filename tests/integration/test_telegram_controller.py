@@ -52,8 +52,10 @@ class TelegramControllerIntegrationTests(unittest.IsolatedAsyncioTestCase):
             message_handler=handler,
         )
 
-        run_task = asyncio.create_task(controller.run())
+        await controller.start()
+        run_task = asyncio.create_task(controller.telegram.run_forever())
         await asyncio.wait_for(processed.wait(), timeout=1)
+        await controller.telegram.stop()
         await controller.stop()
         await asyncio.wait_for(run_task, timeout=1)
 

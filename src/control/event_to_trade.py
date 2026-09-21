@@ -12,6 +12,7 @@ from src.control.event.message_parser import parse_bithumb_telegram_notice, pars
 from src.control.event.telegram_controller import MessageHandler, TelegramMessage
 from src.support.latency_profiler import LatencyProfiler
 from src.support.logger import get_logger
+from src.integration.telegram_integration import TelegramIntegration
 
 TRADE_CHANNELS = Literal["BINANCE"]
 logger = get_logger(__name__)
@@ -25,6 +26,7 @@ class EventToTrade:
         *,
         trade_control: BinanceController | None = None,
         message_handler: MessageHandler | None = None,
+        telegram: TelegramIntegration | None = None,
     ) -> None:
         parsers = {
             "UPBIT": parse_upbit_telegram_notice,
@@ -44,6 +46,7 @@ class EventToTrade:
         self.event_control = listener_factory(
             event_source,
             message_handler if message_handler is not None else self.trigger_action,
+            telegram=telegram,
         )
 
     async def trigger_action(
@@ -103,7 +106,7 @@ async def _trigger_action(
     latency_profiler: LatencyProfiler | None = None,
 ) -> None:
     parse_function = parse_function or parse_upbit_telegram_notice
-    logger.info("Received new telegram message")
+    logger.info("Received Telegram message channel_id=%s message_id=%s", message.channel_id, message.message_id)
     if latency_profiler is None:
         target_assets = parse_function(message)
     else:

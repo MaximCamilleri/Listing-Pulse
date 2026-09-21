@@ -27,22 +27,7 @@ asyncio.run(start_trader(
 ))
 ```
 
-The listeners run concurrently and share one Binance controller. A shutdown request or either listener exiting stops the group and drains accepted messages before closing Binance. Empty lists, unsupported sources, and duplicate pairs are rejected. Omit `combinations` to use the Upbit/Binance default; a single pair selects one source. `start_trader` accepts only `stop_event` and `combinations`. Separate notices from different sources can each trigger trades; the current shared heartbeat reports progress from either listener rather than health of every listener.
-
-## Engineering Highlights
-
-## Select Event and Trade Sources
-
-`start_trader()` defaults to Upbit signals and Binance trades. To listen to both sources, set `UPBIT_TELEGRAM_CHANNEL` and `BITHUMB_TELEGRAM_CHANNEL`, then use this call in `main.py` after configuring the shutdown event:
-
-```python
-asyncio.run(start_trader(
-    stop_event=shutdown_event,
-    combinations=[("UPBIT", "BINANCE"), ("BITHUMB", "BINANCE")],
-))
-```
-
-The listeners run concurrently and share one Binance controller. A shutdown request or either listener exiting stops the group and drains accepted messages before closing Binance. Empty lists, unsupported sources, and duplicate pairs are rejected. Omit `combinations` to use the Upbit/Binance default; a single pair selects one source. `start_trader` accepts only `stop_event` and `combinations`. Separate notices from different sources can each trigger trades; the current shared heartbeat reports progress from either listener rather than health of every listener.
+The listeners run concurrently and share one Binance controller. A shutdown request or the Telegram connection supervisor exiting stops the group and drains accepted messages before closing Binance. Empty lists, unsupported sources, and duplicate pairs are rejected. Omit `combinations` to use the Upbit/Binance default; a single pair selects one source. `start_trader` accepts only `stop_event` and `combinations`. Separate notices from different sources can each trigger trades; both subscriptions share one Telegram connection, with separate queues and a single heartbeat. Connection readiness requires all subscriptions to activate.
 
 ## Engineering Highlights
 
