@@ -35,13 +35,17 @@ class Settings(BaseSettings):
     telegram_session:str = Field(default="", description="Serialized Telethon session")
     telegram_api_id:int = Field(default=1, gt=0, description="Numeric application identifier issued by Telegram")
     telegram_api_hash:str = Field(default="", description="Secret application hash issued alongside telegram_api_id")
-    telegram_channel:str = Field(default="", description="Telegram channel to monitor")
     telegram_phone:str = Field(default="", description="Phone number of the Telegram user account used by Telethon to authenticate, including the international country code")
     telegram_connection_retries:int = Field(default=5, gt=0, description="Maximum number of connection attempts Telethon performs after a connection failure")
     telegram_retry_delay:float = Field(default=5.0, gt=0.0, description="Number of seconds Telethon waits between its internal connection retry attempts")
     telegram_supervisor_initial_delay:float = Field(default=2.0, gt=0.0, description="Initial number of seconds the application-level supervisor waits before reconnecting after Telethon disconnects")
     telegram_supervisor_max_delay:float = Field(default=60.0, gt=0.0, description="Maximum number of seconds allowed for the application-level exponential reconnection delay")
     telegram_readiness_max_wait_seconds:float = Field(default=900.0, gt=0.0, description="Maximum time a connected listener may remain in recoverable startup or flood-wait state while refreshing health")
+
+    # Telegram Channels
+    upbit_telegram_channel:str = Field(default="", validation_alias=AliasChoices("UPBIT_TELEGRAM_CHANNEL", "TELEGRAM_CHANNEL"), description="Telegram channel to monitor upbit notifications")
+    bithumb_telegram_channel:str = Field(default="", description="Telegram channel to monitor bithumb notifications")
+
 
     # Trade
     order_direction: ORDER_DIRECTION = Field(default="BUY", description="Trade direction")

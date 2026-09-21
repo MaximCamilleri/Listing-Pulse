@@ -1,5 +1,8 @@
 import re
-from src.control.telegram_controller import TelegramMessage
+from src.control.event.telegram_controller import TelegramMessage
+
+BITHUMB_LISTING_PREFIX = "[마켓 추가]"
+BITHUMB_MARKET_NAMES = {"원화": "KRW", "비트코인": "BTC"}
 
 
 def parse_upbit_telegram_notice(message:TelegramMessage) -> list[str]:
@@ -49,3 +52,34 @@ def parse_upbit_telegram_notice(message:TelegramMessage) -> list[str]:
         asset_list.append(match.group("symbol"))
     
     return asset_list
+
+def parse_bithumb_telegram_notice(message:TelegramMessage) -> list[str]:
+    text = message.text
+
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines or not lines[0].startswith(BITHUMB_LISTING_PREFIX):
+        return []
+
+    headline = lines[0].removeprefix(BITHUMB_LISTING_PREFIX).strip()
+    listing_match = re.fullmatch(r"(?P<assets>.+\))\s+(?P<markets>.+?)\s*마켓\s*추가(?:\s*안내)?", headline)
+    if not listing_match:
+        return []
+
+    markets_text = listing_match.group("markets")
+    markets = [
+        market
+        for label, market in BITHUMB_MARKET_NAMES.items()
+        if label in markets_text
+    ]
+    markets.extend(re.findall(r"\b(?:KRW|BTC|USDT)\b", markets_text.upper()))
+    if "KRW" not in markets:
+        return []
+
+    assets = []
+    for match in re.finditer(
+        r"(?P<asset_name>[^,()]+?)\s*\((?P<symbol>[A-Z0-9]+)\)",
+        listing_match.group("assets"),
+    ):
+        assets.append(match.group("symbol"))
+
+    return assets

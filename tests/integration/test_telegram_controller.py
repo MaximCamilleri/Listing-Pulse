@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
-from src.control.telegram_controller import TelegramController
+from src.control.event.telegram_controller import TelegramController
 from src.integration.telegram_integration import TelegramMessage
 
 
@@ -40,7 +40,7 @@ class FakeTelegramIntegration:
 
 class TelegramControllerIntegrationTests(unittest.IsolatedAsyncioTestCase):
     @patch(
-        "src.control.telegram_controller.TelegramIntegration",
+        "src.control.event.telegram_controller.TelegramIntegration",
         FakeTelegramIntegration,
     )
     async def test_received_message_is_processed_and_shutdown_drains_queue(self):

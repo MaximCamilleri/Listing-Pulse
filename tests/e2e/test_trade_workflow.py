@@ -40,8 +40,8 @@ class WorkflowTelegramController:
 
 
 class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
-    @patch("src.interface.trade_interface.TelegramController", WorkflowTelegramController)
-    @patch("src.interface.trade_interface.BinanceController")
+    @patch("src.control.event.listener_factory.TelegramController", WorkflowTelegramController)
+    @patch("src.control.event_to_trade.BinanceController")
     async def test_telegram_message_triggers_configured_binance_trade(
         self,
         binance_controller_class,
@@ -73,7 +73,7 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
         binance.stop.assert_awaited_once()
         self.assertEqual(
             WorkflowTelegramController.instance.channel,
-            settings.telegram_channel,
+            settings.upbit_telegram_channel,
         )
         self.assertEqual(
             WorkflowTelegramController.instance.telegram_kwargs["session_string"],

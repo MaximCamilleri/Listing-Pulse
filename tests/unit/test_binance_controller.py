@@ -11,7 +11,7 @@ from binance_sdk_derivatives_trading_usds_futures.rest_api.models import (
 )
 
 from src.config.settings import settings
-from src.control.binance_controller import BinanceController
+from src.control.trade.binance_controller import BinanceController
 from src.integration.binance_integration import (
     BinanceLeverageBracket,
     BinanceMarketRules,

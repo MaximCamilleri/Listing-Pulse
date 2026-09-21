@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from src.control.message_parser import parse_upbit_telegram_notice
+from src.control.event.message_parser import parse_upbit_telegram_notice
 from src.integration.telegram_integration import TelegramMessage
 
 

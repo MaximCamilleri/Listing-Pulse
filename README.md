@@ -4,6 +4,46 @@ Listing Pulse is an event-driven Python worker that turns Upbit KRW listing anno
 
 The project is currently intended for Binance testnet experimentation. Live trading is disabled by default and requires explicit configuration.
 
+## Generate a Telegram Session
+
+From the repository root, with the project dependencies installed, set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` in `.env` using your credentials from [Telegram's application portal](https://my.telegram.org). Set `TELEGRAM_PHONE` with its international country code, or enter it when prompted.
+
+```powershell
+python script/generate_telegram_session.py
+```
+
+Enter the Telegram login code and, if enabled, your two-step verification password. Copy the printed `TELEGRAM_SESSION="..."` line into `.env` or your deployment secret configuration, then restart the worker. The script always creates a fresh session and ignores any existing `TELEGRAM_SESSION`; it does not modify `.env` or start the trading workflow.
+
+Generate a separate session for each independently running worker instead of sharing a session between deployments. Keep the output private: a [Telethon string session](https://docs.telethon.dev/en/stable/concepts/sessions.html#string-sessions) grants access to the Telegram account. Stop any old worker before replacing its session configuration.
+
+## Select Event and Trade Sources
+
+`python main.py` automatically starts a listener for each non-blank `UPBIT_TELEGRAM_CHANNEL` and `BITHUMB_TELEGRAM_CHANNEL` setting. Set both to listen to both sources, or leave one blank to disable it. Startup fails if neither is configured. When calling `start_trader` directly, you can select pairs explicitly:
+
+```python
+asyncio.run(start_trader(
+    stop_event=shutdown_event,
+    combinations=[("UPBIT", "BINANCE"), ("BITHUMB", "BINANCE")],
+))
+```
+
+The listeners run concurrently and share one Binance controller. A shutdown request or either listener exiting stops the group and drains accepted messages before closing Binance. Empty lists, unsupported sources, and duplicate pairs are rejected. Omit `combinations` to use the Upbit/Binance default; a single pair selects one source. `start_trader` accepts only `stop_event` and `combinations`. Separate notices from different sources can each trigger trades; the current shared heartbeat reports progress from either listener rather than health of every listener.
+
+## Engineering Highlights
+
+## Select Event and Trade Sources
+
+`start_trader()` defaults to Upbit signals and Binance trades. To listen to both sources, set `UPBIT_TELEGRAM_CHANNEL` and `BITHUMB_TELEGRAM_CHANNEL`, then use this call in `main.py` after configuring the shutdown event:
+
+```python
+asyncio.run(start_trader(
+    stop_event=shutdown_event,
+    combinations=[("UPBIT", "BINANCE"), ("BITHUMB", "BINANCE")],
+))
+```
+
+The listeners run concurrently and share one Binance controller. A shutdown request or either listener exiting stops the group and drains accepted messages before closing Binance. Empty lists, unsupported sources, and duplicate pairs are rejected. Omit `combinations` to use the Upbit/Binance default; a single pair selects one source. `start_trader` accepts only `stop_event` and `combinations`. Separate notices from different sources can each trigger trades; the current shared heartbeat reports progress from either listener rather than health of every listener.
+
 ## Engineering Highlights
 
 - **Asynchronous event pipeline:** Telethon events are normalized, buffered in a bounded queue, and processed without blocking the event loop. Notices containing multiple assets can trigger concurrent per-symbol workflows.
