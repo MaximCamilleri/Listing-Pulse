@@ -5,14 +5,14 @@ configured Telegram channel and exercises real testnet requests.
 """
 
 import asyncio
-import signal
 import threading
 from datetime import datetime, timezone
 
 from main import _configure_shutdown_signals
 from src.config.settings import settings
-from src.control.binance_controller import BinanceController
-from src.interface.trade_interface import _trigger_action, start_trader
+from src.control.trade.binance_controller import BinanceController
+from src.control.event_to_trade import EventToTrade, _trigger_action
+from src.interface.trade_interface import run_workflows
 from src.support.healthcheck import reset_health
 from src.support.latency_profiler import LatencyProfiler
 from src.support.logger import configure_logging, get_logger
@@ -66,11 +66,12 @@ async def main(stop_event: threading.Event) -> None:
                     span.task_name,
                 )
 
-    await start_trader(
-        stop_event=stop_event,
+    workflow = EventToTrade(
+        "UPBIT", "BINANCE",
         trade_control=trade_control,
         message_handler=profiled_trigger,
     )
+    await run_workflows([workflow], stop_event)
 
 
 if __name__ == "__main__":

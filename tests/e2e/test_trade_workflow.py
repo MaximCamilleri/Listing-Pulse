@@ -13,14 +13,18 @@ from src.interface.trade_interface import start_trader
 class WorkflowTelegramController:
     instance = None
 
-    def __init__(self, *, telegram_kwargs, channel, message_handler):
+    def __init__(self, *, telegram_kwargs, channel, message_handler, telegram=None):
         type(self).instance = self
+        self.telegram = self
         self.telegram_kwargs = telegram_kwargs
         self.channel = channel
         self.message_handler = message_handler
         self.stopped = asyncio.Event()
 
-    async def run(self):
+    async def start(self):
+        pass
+
+    async def run_forever(self):
         await self.message_handler(
             TelegramMessage(
                 channel_id=123,
@@ -40,8 +44,8 @@ class WorkflowTelegramController:
 
 
 class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
-    @patch("src.interface.trade_interface.TelegramController", WorkflowTelegramController)
-    @patch("src.interface.trade_interface.BinanceController")
+    @patch("src.control.event.listener_factory.TelegramController", WorkflowTelegramController)
+    @patch("src.control.event_to_trade.BinanceController")
     async def test_telegram_message_triggers_configured_binance_trade(
         self,
         binance_controller_class,
@@ -73,7 +77,7 @@ class TradeWorkflowEndToEndTests(unittest.IsolatedAsyncioTestCase):
         binance.stop.assert_awaited_once()
         self.assertEqual(
             WorkflowTelegramController.instance.channel,
-            settings.telegram_channel,
+            settings.upbit_telegram_channel,
         )
         self.assertEqual(
             WorkflowTelegramController.instance.telegram_kwargs["session_string"],
