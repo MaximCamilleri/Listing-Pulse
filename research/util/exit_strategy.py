@@ -117,6 +117,7 @@ def calculate_volume_exit_pnl(
             if _volume <= volume_threshold: 
                 return (tick.price / entry_price - 1) * 100
             _volume = 0
+            _next_check += time_interval_ms
 
         _volume += tick.quantity
 

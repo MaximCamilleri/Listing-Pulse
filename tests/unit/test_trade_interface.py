@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from src.config.settings import settings
 from src.integration.telegram_integration import TelegramMessage
-from src.interface.trade_interface import _trigger_action
+from src.control.event_to_trade import _trigger_action
 from src.support.latency_profiler import LatencyProfiler
 
 
@@ -29,7 +29,7 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
         profiler = LatencyProfiler()
 
         with patch(
-            "src.interface.trade_interface.parse_upbit_telegram_notice",
+            "src.control.event_to_trade.parse_upbit_telegram_notice",
             return_value=["BTC"],
         ):
             await _trigger_action(
@@ -56,7 +56,7 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "src.interface.trade_interface.parse_upbit_telegram_notice",
+                "src.control.event_to_trade.parse_upbit_telegram_notice",
                 return_value=["BTC", "ETH", "BTC"],
             ),
             patch.object(settings, "order_quote_asset", "USDC"),
@@ -80,10 +80,10 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "src.interface.trade_interface.parse_upbit_telegram_notice",
+                "src.control.event_to_trade.parse_upbit_telegram_notice",
                 return_value=["BTC"],
             ),
-            self.assertLogs("src.interface.trade_interface", level="INFO") as logs,
+            self.assertLogs("src.control.event_to_trade", level="INFO") as logs,
         ):
             await _trigger_action(message, trade_control)
 
@@ -99,7 +99,7 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
         trade_control = AsyncMock()
 
         with patch(
-            "src.interface.trade_interface.parse_upbit_telegram_notice",
+            "src.control.event_to_trade.parse_upbit_telegram_notice",
             return_value=[],
         ):
             await _trigger_action(make_message(), trade_control)
@@ -111,7 +111,7 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
         trade_control.place_market_order.side_effect = RuntimeError("order failed")
 
         with patch(
-            "src.interface.trade_interface.parse_upbit_telegram_notice",
+            "src.control.event_to_trade.parse_upbit_telegram_notice",
             return_value=["BTC"],
         ):
             with self.assertRaisesRegex(RuntimeError, "order failed"):
@@ -123,10 +123,10 @@ class TradeInterfaceTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "src.interface.trade_interface.parse_upbit_telegram_notice",
+                "src.control.event_to_trade.parse_upbit_telegram_notice",
                 return_value=["BTC"],
             ),
-            self.assertLogs("src.interface.trade_interface", level="INFO") as logs,
+            self.assertLogs("src.control.event_to_trade", level="INFO") as logs,
         ):
             await _trigger_action(make_message(), trade_control)
 

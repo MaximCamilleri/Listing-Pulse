@@ -14,6 +14,8 @@ The project is being built as a long-running worker rather than a web API. The c
 
 The preferred AWS direction is a single-container ECS Fargate service. ECS provides a clean start/stop model through desired count, sends logs to CloudWatch, and avoids managing a server directly. A small Lightsail instance remains the cheapest possible option, but it carries more operational responsibility.
 
+The worker's published container images target ARM64 for hosting on AWS Graviton. Builds and automated tests run on ARM64 to match the deployment architecture. Hosting decisions are recorded in [hosting.md](hosting.md).
+
 Strategy parameters will be evaluated offline in a dedicated research workspace. Historical Binance Futures trade data will be replayed to compare entry latency and trailing-stop behavior before those findings are considered for production trading changes.
 
 Signal-to-trade latency will be optimized according to `spec/latency_optimization.md`. The current measured DEMO path is dominated by serial Binance metadata and configuration requests rather than parsing. The worker maintains a live Binance futures market-price stream, caches bounded-lifetime market rules and leverage brackets, avoids only confirmed redundant leverage changes, and calculates quote-notional quantity locally immediately before entry. Missing or stale streamed prices fail closed.
@@ -22,7 +24,9 @@ Latency improvements must not remove bounded-age streamed-price sizing, market-r
 
 ## Implemented Capabilities
 
-The worker can subscribe to new messages from one configured Telegram channel. The channel may be configured as a username, URL, or numeric channel ID. Telethon events are converted into an integration-neutral message model and placed on a bounded in-memory queue. Messages are processed sequentially, and a failure while handling one message is logged without terminating the listener.
+Operators can generate a fresh Telegram user session with `script/generate_telegram_session.py`, using their configured Telegram application credentials and interactive login verification. The command prints a secret session value for manual configuration without starting the worker or trading workflow. Each independently running worker should use its own generated session.
+
+The worker can subscribe to Upbit and Bithumb Telegram channels concurrently by passing event/trade combinations to `start_trader`. Each channel may be configured as a username, URL, or numeric channel ID. Telethon events are converted into an integration-neutral message model and placed on a bounded in-memory queue per listener. Messages are processed sequentially within each listener, and a failure while handling one message is logged without terminating the listener.
 
 The Telegram connection uses Telethon's automatic reconnect support plus an application-level exponential-backoff supervisor. It uses a serialized Telegram session supplied through configuration and drains messages already accepted into the queue during graceful shutdown.
 
@@ -39,6 +43,14 @@ The hosted worker exposes Telegram listener health without adding a web server. 
 Telegram listener startup resolves and activates its configured subscription before reporting readiness. Hosted workers should use a numeric channel ID to avoid repeated username-resolution requests. When Telegram imposes a temporary flood wait, the responsive supervisor honors that delay without reconnect churn and remains live for a bounded configurable period; readiness and degraded recovery remain visible in logs.
 
 The signal-to-trade workflow is modular. `TelegramIntegration` owns external Telegram connectivity, `TelegramController` owns subscription, buffering, and sequential message dispatch, and the interface layer injects the trade handler. `BinanceController` owns trade validation and order sequencing, while `BinanceIntegration` owns raw SDK calls.
+
+`EventToTrade` assembles a selected Upbit or Bithumb Telegram source with Binance trading, including the source-specific KRW listing parser and message handler. Upbit remains the default source. Runtime startup and shutdown stay in `trade_interface`, so assembling a workflow does not begin listening or trading.
+
+Multiple selected workflows run together and share their Binance controller. Shutdown or the connection supervisor exiting stops the whole group, allowing accepted messages to drain before trading resources close. Duplicate source/destination pairs are rejected, but notices received independently from different sources may still trigger separate trades. Both channel subscriptions share one Telegram connection and session, avoiding competing clients using the same session credentials. Each source retains its own queue and parser. The single connection reports ready after all subscriptions activate and owns the shared health heartbeat and reconnect recovery. Shutdown closes the connection before draining both message queues.
+
+`main.py` automatically enables each source with a non-blank channel setting: `UPBIT_TELEGRAM_CHANNEL` and `BITHUMB_TELEGRAM_CHANNEL`. Both configured channels run together against Binance. Startup exits with a configuration error if neither channel is configured.
+
+The runtime entry function accepts only event/trade combinations and a shutdown event. The DEMO latency diagnostic assembles its profiled workflow separately and uses the same startup and shutdown lifecycle.
 
 ## Rationale
 

@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from src.control.message_parser import parse_upbit_telegram_notice
+from src.control.event.message_parser import parse_upbit_telegram_notice
 from src.integration.telegram_integration import TelegramMessage
 
 
@@ -43,6 +43,20 @@ class MessageParserTests(unittest.TestCase):
         )
 
         self.assertEqual(parse_upbit_telegram_notice(message), ["KMNO"])
+
+    def test_parses_multi_market_asset_addition_including_krw(self):
+        message = make_message(
+            "[거래] 바이프로스트(BFC) KRW, USDT 마켓 디지털 자산 추가"
+        )
+
+        self.assertEqual(parse_upbit_telegram_notice(message), ["BFC"])
+
+    def test_rejects_asset_addition_without_krw_market(self):
+        message = make_message(
+            "[거래] 바이프로스트(BFC) USDT 마켓 디지털 자산 추가"
+        )
+
+        self.assertEqual(parse_upbit_telegram_notice(message), [])
 
     def test_rejects_krw_market_asset_addition_start_time_change(self):
         message = make_message(

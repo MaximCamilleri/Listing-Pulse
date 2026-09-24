@@ -269,7 +269,7 @@ class TelegramIntegration:
             )
             subscription.event_builder = event_builder
             logger.info(
-                "Activated Telegram channel subscription",
+                "Activated Telegram channel subscription channel=%s", channel,
                 extra={
                     "subscription_id": subscription_id,
                     "channel_reference_type": (
@@ -311,7 +311,7 @@ class TelegramIntegration:
                     # the listener can safely reset its recovery backoff.
                     reconnect_delay = self._supervisor_initial_delay
 
-                    logger.info("Telegram listener is ready")
+                    logger.info("Telegram listener is ready subscriptions=%s", len(self._subscriptions))
 
                     await self._client.run_until_disconnected()
 
