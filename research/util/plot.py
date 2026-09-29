@@ -15,6 +15,8 @@ def plot_lines_with_average(
     figsize: tuple[float, float] = (12, 6.5),
     show_markers: bool = True,
     show_zero_line: bool = True,
+    print: bool = True,
+    ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes, pd.DataFrame]:
     """
     Plot selected lines from a dictionary and their pointwise average.
@@ -32,6 +34,14 @@ def plot_lines_with_average(
 
     lines:
         Names of the lines to plot. When None, all lines are plotted.
+
+    print:
+        Display the figure when True. When False, newly created figures are
+        closed to prevent automatic notebook display but are still returned.
+
+    ax:
+        Optional axes to draw on when composing a shared figure. The caller
+        controls display of the shared figure when print is False.
 
     Returns
     -------
@@ -84,7 +94,11 @@ def plot_lines_with_average(
         skipna=True,
     )
 
-    fig, ax = plt.subplots(figsize=figsize)
+    owns_figure = ax is None
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
 
     marker = "o" if show_markers else None
 
@@ -140,4 +154,8 @@ def plot_lines_with_average(
     )
 
     fig.tight_layout()
+    if print:
+        plt.show()
+    elif owns_figure:
+        plt.close(fig)
     return fig, ax, plot_data
